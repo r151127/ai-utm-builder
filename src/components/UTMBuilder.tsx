@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
 import { Copy, Check, ExternalLink, AlertCircle } from 'lucide-react';
+import { toast } from '@/components/ui/use-toast';
 
 const UTMBuilder = () => {
   const { user } = useAuth();
@@ -124,41 +126,30 @@ const UTMBuilder = () => {
   };
 
   const generateShortUrl = async (fullUrl: string, customAlias?: string) => {
-    console.log('Attempting to generate short URL for:', fullUrl);
+    console.log('Generating short URL via edge function for:', fullUrl);
     
     try {
-      const tinyUrlApi = 'https://tinyurl.com/api-create.php';
-      const params = new URLSearchParams({
-        url: fullUrl,
-        ...(customAlias && { alias: customAlias })
-      });
-
-      console.log('Making TinyURL request with params:', params.toString());
-      
-      const response = await fetch(`${tinyUrlApi}?${params}`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'text/plain'
+      const { data, error } = await supabase.functions.invoke('shorten-url', {
+        body: {
+          url: fullUrl,
+          customAlias: customAlias
         }
       });
 
-      if (!response.ok) {
-        throw new Error(`TinyURL API error: ${response.status} ${response.statusText}`);
+      if (error) {
+        console.error('Edge function error:', error);
+        throw error;
       }
 
-      const shortUrl = await response.text();
-      console.log('TinyURL response:', shortUrl);
-
-      if (shortUrl.includes('Error') || shortUrl.includes('error') || shortUrl.length < 10) {
-        // If TinyURL fails, return a fallback or the original URL
-        console.warn('TinyURL returned error, using fallback');
-        return fullUrl; // Use original URL as fallback
+      if (data?.shortUrl) {
+        console.log('Short URL generated:', data.shortUrl);
+        return data.shortUrl;
       }
 
-      return shortUrl.trim();
+      throw new Error('No short URL returned from function');
     } catch (error) {
-      console.error('TinyURL Error:', error);
-      // Return original URL as fallback
+      console.error('Short URL generation failed:', error);
+      // Fallback: return original URL
       return fullUrl;
     }
   };
@@ -171,18 +162,33 @@ const UTMBuilder = () => {
     setError('');
     setResult(null);
 
+    // Check authentication first
     if (!user?.email) {
-      setError('User email not found. Please sign in again.');
+      console.error('User not authenticated:', user);
+      setError('Please sign in to generate UTM links.');
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in to generate UTM links.",
+        variant: "destructive",
+      });
       setLoading(false);
       return;
     }
+
+    console.log('User authenticated:', user.email);
 
     // Validate required fields
     const requiredFields = ['program', 'channel', 'platform', 'placement', 'landingPage'];
     const missingFields = requiredFields.filter(field => !formData[field as keyof typeof formData]);
     
     if (missingFields.length > 0) {
-      setError(`Please fill in all required fields: ${missingFields.join(', ')}`);
+      const errorMsg = `Please fill in all required fields: ${missingFields.join(', ')}`;
+      setError(errorMsg);
+      toast({
+        title: "Missing Fields",
+        description: errorMsg,
+        variant: "destructive",
+      });
       setLoading(false);
       return;
     }
@@ -203,12 +209,12 @@ const UTMBuilder = () => {
       const fullUrl = `${baseUrl}?${urlParams.toString()}`;
       console.log('Full URL generated:', fullUrl);
 
-      // Generate short URL
+      // Generate short URL using edge function
       console.log('Generating short URL...');
       const shortUrl = await generateShortUrl(fullUrl, formData.domain || undefined);
       console.log('Short URL generated:', shortUrl);
 
-      // Save to database first to get the ID
+      // Save to database
       console.log('Saving to database...');
       const { data: linkData, error: dbError } = await supabase
         .from('utm_links')
@@ -234,7 +240,7 @@ const UTMBuilder = () => {
 
       if (dbError) {
         console.error('Database error:', dbError);
-        throw dbError;
+        throw new Error(`Database error: ${dbError.message}`);
       }
 
       if (!linkData) {
@@ -266,10 +272,20 @@ const UTMBuilder = () => {
         trackingUrl
       });
 
+      toast({
+        title: "UTM Links Generated",
+        description: "Your UTM links have been generated successfully!",
+      });
+
     } catch (error) {
       console.error('Error in handleSubmit:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
       setError(`Failed to generate UTM link: ${errorMessage}`);
+      toast({
+        title: "Generation Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -279,9 +295,18 @@ const UTMBuilder = () => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedField(field);
+      toast({
+        title: "Copied!",
+        description: "Link copied to clipboard",
+      });
       setTimeout(() => setCopiedField(''), 2000);
     } catch (error) {
       console.error('Failed to copy:', error);
+      toast({
+        title: "Copy Failed",
+        description: "Failed to copy to clipboard",
+        variant: "destructive",
+      });
     }
   };
 
@@ -530,12 +555,6 @@ const UTMBuilder = () => {
                 </div>
               </div>
             </div>
-
-            {copiedField && (
-              <div className="mt-2 text-sm text-green-600">
-                Copied to clipboard!
-              </div>
-            )}
           </div>
         )}
 

@@ -3,3 +3,6 @@ project_id = "msrfiyovfhgyzeivrtlr"
 
 [functions.track-click]
 verify_jwt = false
+
+[functions.shorten-url]
+verify_jwt = false
