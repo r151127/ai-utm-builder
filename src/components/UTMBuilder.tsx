@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
@@ -82,7 +81,7 @@ const UTMBuilder = () => {
       'Affiliate': ['https://accounts.ccbp.in/register/ccbp-affiliate'],
       'Digital Marketing': ['https://nxtwave.ccbp.in/intensive-english'],
       'Influencer Marketing': ['https://www.fullstackdevelopercourse.co.in/nxtwave-intensive-demo', 'https://www.ccbp.in/intensive-new-v2', 'https://www.fullstackdevelopercourse.co.in/intensive-portal-experience', 'https://www.ccbp.in/intensive/instant-query-resolution', 'https://www.ccbp.in/intensive'],
-      'Employee Referral': ['ccbp.in/intensive/referral'],
+      'Employee Referral': ['https://ccbp.in/intensive/referral'],
       'NET': ['https://www.ccbp.in/net']
     },
     'NIAT': {
@@ -125,6 +124,8 @@ const UTMBuilder = () => {
   };
 
   const generateShortUrl = async (fullUrl: string, customAlias?: string) => {
+    console.log('Attempting to generate short URL for:', fullUrl);
+    
     try {
       const tinyUrlApi = 'https://tinyurl.com/api-create.php';
       const params = new URLSearchParams({
@@ -132,34 +133,64 @@ const UTMBuilder = () => {
         ...(customAlias && { alias: customAlias })
       });
 
-      const response = await fetch(`${tinyUrlApi}?${params}`);
-      const shortUrl = await response.text();
+      console.log('Making TinyURL request with params:', params.toString());
+      
+      const response = await fetch(`${tinyUrlApi}?${params}`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/plain'
+        }
+      });
 
-      if (shortUrl.includes('Error') || shortUrl.includes('error')) {
-        throw new Error(shortUrl);
+      if (!response.ok) {
+        throw new Error(`TinyURL API error: ${response.status} ${response.statusText}`);
       }
 
-      return shortUrl;
+      const shortUrl = await response.text();
+      console.log('TinyURL response:', shortUrl);
+
+      if (shortUrl.includes('Error') || shortUrl.includes('error') || shortUrl.length < 10) {
+        // If TinyURL fails, return a fallback or the original URL
+        console.warn('TinyURL returned error, using fallback');
+        return fullUrl; // Use original URL as fallback
+      }
+
+      return shortUrl.trim();
     } catch (error) {
-      throw new Error(`TinyURL Error: ${error}`);
+      console.error('TinyURL Error:', error);
+      // Return original URL as fallback
+      return fullUrl;
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Form submitted with data:', formData);
+    
     setLoading(true);
     setError('');
     setResult(null);
 
     if (!user?.email) {
-      setError('User email not found');
+      setError('User email not found. Please sign in again.');
+      setLoading(false);
+      return;
+    }
+
+    // Validate required fields
+    const requiredFields = ['program', 'channel', 'platform', 'placement', 'landingPage'];
+    const missingFields = requiredFields.filter(field => !formData[field as keyof typeof formData]);
+    
+    if (missingFields.length > 0) {
+      setError(`Please fill in all required fields: ${missingFields.join(', ')}`);
       setLoading(false);
       return;
     }
 
     try {
-      // Generate UTM parameters
+      console.log('Generating UTM parameters...');
       const { utmSource, utmMedium, utmCampaign } = generateUTMParams();
+      console.log('UTM params:', { utmSource, utmMedium, utmCampaign });
       
       // Build full URL with UTM parameters
       const baseUrl = formData.landingPage;
@@ -170,11 +201,15 @@ const UTMBuilder = () => {
       });
       
       const fullUrl = `${baseUrl}?${urlParams.toString()}`;
+      console.log('Full URL generated:', fullUrl);
 
       // Generate short URL
+      console.log('Generating short URL...');
       const shortUrl = await generateShortUrl(fullUrl, formData.domain || undefined);
+      console.log('Short URL generated:', shortUrl);
 
       // Save to database first to get the ID
+      console.log('Saving to database...');
       const { data: linkData, error: dbError } = await supabase
         .from('utm_links')
         .insert({
@@ -183,9 +218,9 @@ const UTMBuilder = () => {
           channel: formData.channel,
           platform: formData.platform,
           placement: formData.placement,
-          cba: formData.cbaCode,
-          code: formData.codeName,
-          domain: formData.domain,
+          cba: formData.cbaCode || null,
+          code: formData.codeName || null,
+          domain: formData.domain || null,
           utm_source: utmSource,
           utm_medium: utmMedium,
           utm_campaign: utmCampaign,
@@ -197,21 +232,34 @@ const UTMBuilder = () => {
         .select()
         .single();
 
-      if (dbError) throw dbError;
-
-      if (!linkData) {
-        throw new Error('Failed to save link to database');
+      if (dbError) {
+        console.error('Database error:', dbError);
+        throw dbError;
       }
 
-      // Generate tracking URL with the record ID
-      const trackingUrl = `${window.location.origin}/api/track?id=${linkData.id}&url=${encodeURIComponent(shortUrl)}`;
+      if (!linkData) {
+        throw new Error('Failed to save link to database - no data returned');
+      }
+
+      console.log('Database save successful, ID:', linkData.id);
+
+      // Generate tracking URL with the correct Supabase function URL format
+      const trackingUrl = `https://msrfiyovfhgyzeivrtlr.supabase.co/functions/v1/track-click?id=${linkData.id}&url=${encodeURIComponent(shortUrl)}`;
+      console.log('Tracking URL generated:', trackingUrl);
 
       // Update the record with the tracking URL
-      await supabase
+      console.log('Updating record with tracking URL...');
+      const { error: updateError } = await supabase
         .from('utm_links')
         .update({ tracking_url: trackingUrl })
         .eq('id', linkData.id);
 
+      if (updateError) {
+        console.error('Error updating tracking URL:', updateError);
+        // Don't throw here - we still have the links, just log the error
+      }
+
+      console.log('Process completed successfully');
       setResult({
         fullUrl,
         shortUrl,
@@ -219,7 +267,9 @@ const UTMBuilder = () => {
       });
 
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'An error occurred');
+      console.error('Error in handleSubmit:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      setError(`Failed to generate UTM link: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -247,8 +297,8 @@ const UTMBuilder = () => {
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
             <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-4 rounded-lg">
-              <AlertCircle className="h-5 w-5" />
-              <span>{error}</span>
+              <AlertCircle className="h-5 w-5 flex-shrink-0" />
+              <span className="text-sm">{error}</span>
             </div>
           )}
 
@@ -393,9 +443,9 @@ const UTMBuilder = () => {
           <button
             type="submit"
             disabled={loading}
-            className="utm-button w-full disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? 'Generating...' : 'Generate UTM Link'}
+            {loading ? 'Generating UTM Link...' : 'Generate UTM Link'}
           </button>
         </form>
 
@@ -416,7 +466,8 @@ const UTMBuilder = () => {
                   />
                   <button
                     onClick={() => copyToClipboard(result.fullUrl, 'full')}
-                    className="copy-button"
+                    className="p-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                    title="Copy to clipboard"
                   >
                     {copiedField === 'full' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   </button>
@@ -424,7 +475,8 @@ const UTMBuilder = () => {
                     href={result.fullUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="copy-button"
+                    className="p-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                    title="Open link"
                   >
                     <ExternalLink className="w-4 h-4" />
                   </a>
@@ -442,7 +494,8 @@ const UTMBuilder = () => {
                   />
                   <button
                     onClick={() => copyToClipboard(result.shortUrl, 'short')}
-                    className="copy-button"
+                    className="p-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                    title="Copy to clipboard"
                   >
                     {copiedField === 'short' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   </button>
@@ -450,7 +503,8 @@ const UTMBuilder = () => {
                     href={result.shortUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="copy-button"
+                    className="p-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                    title="Open link"
                   >
                     <ExternalLink className="w-4 h-4" />
                   </a>
@@ -468,7 +522,8 @@ const UTMBuilder = () => {
                   />
                   <button
                     onClick={() => copyToClipboard(result.trackingUrl, 'tracking')}
-                    className="copy-button"
+                    className="p-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                    title="Copy to clipboard"
                   >
                     {copiedField === 'tracking' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   </button>
