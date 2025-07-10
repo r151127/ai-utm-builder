@@ -51,7 +51,7 @@ const Dashboard = () => {
         .select('*', { count: 'exact' });
 
       // Apply user restriction for non-admin users
-      if (!isAdmin && user) {
+      if (!isAdmin && user?.email) {
         query = query.eq('email', user.email);
       }
 
