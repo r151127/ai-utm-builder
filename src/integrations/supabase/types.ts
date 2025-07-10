@@ -43,7 +43,6 @@ export type Database = {
           code: string | null
           created_at: string | null
           domain: string | null
-          email: string
           full_url: string
           id: string
           placement: string
@@ -51,6 +50,7 @@ export type Database = {
           program: string
           short_url: string
           tracking_url: string
+          user_id: string
           utm_campaign: string
           utm_medium: string
           utm_source: string
@@ -62,7 +62,6 @@ export type Database = {
           code?: string | null
           created_at?: string | null
           domain?: string | null
-          email: string
           full_url: string
           id?: string
           placement: string
@@ -70,6 +69,7 @@ export type Database = {
           program: string
           short_url: string
           tracking_url: string
+          user_id: string
           utm_campaign: string
           utm_medium: string
           utm_source: string
@@ -81,7 +81,6 @@ export type Database = {
           code?: string | null
           created_at?: string | null
           domain?: string | null
-          email?: string
           full_url?: string
           id?: string
           placement?: string
@@ -89,6 +88,7 @@ export type Database = {
           program?: string
           short_url?: string
           tracking_url?: string
+          user_id?: string
           utm_campaign?: string
           utm_medium?: string
           utm_source?: string

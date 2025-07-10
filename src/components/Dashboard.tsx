@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,7 +5,7 @@ import { Download, Search, Filter, ChevronLeft, ChevronRight, ExternalLink, Refr
 
 interface UTMLink {
   id: string;
-  email: string;
+  user_id: string;
   program: string;
   channel: string;
   utm_source: string;
@@ -50,15 +49,14 @@ const Dashboard = () => {
         .from('utm_links')
         .select('*', { count: 'exact' });
 
-      // Apply user restriction for non-admin users
-      if (!isAdmin && user?.email) {
-        query = query.eq('email', user.email);
+      // Apply user restriction for non-admin users - using user_id instead of email
+      if (!isAdmin && user?.id) {
+        query = query.eq('user_id', user.id);
       }
 
-      // Apply filters
-      if (filters.email) {
-        query = query.ilike('email', `%${filters.email}%`);
-      }
+      // Apply filters - note: email filter won't work anymore since we removed the email column
+      // We'll need to join with auth.users if we want to filter by email, but that's not possible with RLS
+      // For now, we'll remove the email filter functionality
       if (filters.program) {
         query = query.eq('program', filters.program);
       }
@@ -108,11 +106,11 @@ const Dashboard = () => {
   const exportToCSV = () => {
     if (!links.length) return;
 
-    const headers = ['Email', 'Program', 'Channel', 'Source', 'Medium', 'Campaign', 'Code/Name', 'Domain', 'Full URL', 'Short Link', 'Clicks', 'Created At'];
+    const headers = ['User ID', 'Program', 'Channel', 'Source', 'Medium', 'Campaign', 'Code/Name', 'Domain', 'Full URL', 'Short Link', 'Clicks', 'Created At'];
     const csvContent = [
       headers.join(','),
       ...links.map(link => [
-        link.email,
+        link.user_id,
         link.program,
         link.channel,
         link.utm_source,
@@ -177,20 +175,10 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Filters */}
+        {/* Filters - remove email filter since we no longer have email column */}
         {showFilters && (
           <div className="bg-gray-50 p-4 rounded-lg mb-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
-                  type="text"
-                  value={filters.email}
-                  onChange={(e) => setFilters({ ...filters, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
-                  placeholder="Search by email"
-                />
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Program</label>
                 <select
@@ -273,13 +261,13 @@ const Dashboard = () => {
         </div>
       ) : (
         <>
-          {/* Table */}
+          {/* Table - replace Email column with User ID */}
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Program</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Channel</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
@@ -295,7 +283,7 @@ const Dashboard = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {links.map((link) => (
                     <tr key={link.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-900">{link.email}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900 font-mono text-xs">{link.user_id}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{link.program}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{link.channel}</td>
                       <td className="px-4 py-3 text-sm text-gray-900 font-mono">{link.utm_source}</td>

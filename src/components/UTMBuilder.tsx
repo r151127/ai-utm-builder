@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
@@ -163,7 +162,7 @@ const UTMBuilder = () => {
     setResult(null);
 
     // Check authentication first
-    if (!user?.email) {
+    if (!user?.id) {
       console.error('User not authenticated:', user);
       setError('Please sign in to generate UTM links.');
       toast({
@@ -175,7 +174,7 @@ const UTMBuilder = () => {
       return;
     }
 
-    console.log('User authenticated:', user.email);
+    console.log('User authenticated:', user.id);
 
     // Validate required fields
     const requiredFields = ['program', 'channel', 'platform', 'placement', 'landingPage'];
@@ -214,12 +213,12 @@ const UTMBuilder = () => {
       const shortUrl = await generateShortUrl(fullUrl, formData.domain || undefined);
       console.log('Short URL generated:', shortUrl);
 
-      // Save to database
+      // Save to database - using user.id instead of user.email
       console.log('Saving to database...');
       const { data: linkData, error: dbError } = await supabase
         .from('utm_links')
         .insert({
-          email: user.email,
+          user_id: user.id,
           program: formData.program,
           channel: formData.channel,
           platform: formData.platform,
