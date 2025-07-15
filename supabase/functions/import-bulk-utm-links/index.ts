@@ -34,7 +34,7 @@ function extractDomainFromUrl(url: string): string {
 }
 
 // Function to create TinyURL that points to our tracking endpoint
-async function createTrackingTinyURL(trackingUrl: string): Promise<string> {
+async function createTrackingTinyURL(trackingUrl: string, customAlias?: string): Promise<string> {
   const tinyUrlToken = Deno.env.get('TINYURL_API_TOKEN');
   
   if (!tinyUrlToken) {
@@ -43,25 +43,67 @@ async function createTrackingTinyURL(trackingUrl: string): Promise<string> {
   }
 
   try {
+    const requestBody: any = {
+      url: trackingUrl,
+      domain: 'tinyurl.com'
+    };
+
+    // Add custom alias if provided
+    if (customAlias && customAlias.trim()) {
+      requestBody.alias = customAlias.trim();
+      console.log('Creating TinyURL with custom alias:', customAlias.trim());
+    }
+
     const response = await fetch('https://api.tinyurl.com/create', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${tinyUrlToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        url: trackingUrl,
-        domain: 'tinyurl.com'
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
-      console.error('TinyURL API error:', response.status, await response.text());
+      const errorText = await response.text();
+      console.error('TinyURL API error:', response.status, errorText);
+      
+      // If custom alias failed (status 422), try without alias
+      if (customAlias && response.status === 422) {
+        console.log('Custom alias failed, trying without alias');
+        const fallbackResponse = await fetch('https://api.tinyurl.com/create', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${tinyUrlToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            url: trackingUrl,
+            domain: 'tinyurl.com'
+          })
+        });
+
+        if (fallbackResponse.ok) {
+          const fallbackData = await fallbackResponse.json();
+          console.log('TinyURL fallback success (no custom alias):', fallbackData.data?.tiny_url);
+          return fallbackData.data?.tiny_url || trackingUrl;
+        }
+      }
+      
       return trackingUrl;
     }
 
     const data = await response.json();
-    return data.data?.tiny_url || trackingUrl;
+    const tinyUrl = data.data?.tiny_url || trackingUrl;
+    
+    if (customAlias) {
+      console.log('TinyURL created with custom alias:', {
+        alias: customAlias,
+        tinyUrl: tinyUrl,
+        success: tinyUrl.includes(customAlias)
+      });
+    }
+    
+    return tinyUrl;
   } catch (error) {
     console.error('Error creating TinyURL:', error);
     return trackingUrl;
@@ -125,7 +167,7 @@ serve(async (req) => {
         console.log('CSV domain empty check:', !linkData.domain)
         console.log('Full URL:', linkData.full_url)
         
-        // Use domain from CSV if provided and not empty, otherwise extract from URL as fallback
+        // Use domain from CSV if provided and not empty/whitespace, otherwise extract from URL as fallback
         const finalDomain = (linkData.domain && linkData.domain.trim()) ? linkData.domain.trim() : extractDomainFromUrl(linkData.full_url);
         
         console.log('Final domain used:', finalDomain)
@@ -182,16 +224,19 @@ serve(async (req) => {
         // Create tracking URL with the actual ID
         const trackingUrl = `${supabaseUrl}/functions/v1/track-click?id=${data.id}`
         
-        // Create TinyURL that points to our tracking endpoint
-        const tinyUrl = await createTrackingTinyURL(trackingUrl)
+        // Create TinyURL that points to our tracking endpoint with custom alias from CSV domain
+        const customAlias = (linkData.domain && linkData.domain.trim()) ? linkData.domain.trim() : undefined;
+        const tinyUrl = await createTrackingTinyURL(trackingUrl, customAlias)
 
         console.log('Created tracking setup:', {
           id: data.id,
           trackingUrl,
           tinyUrl,
           csv_domain: linkData.domain,
+          custom_alias_used: customAlias,
           final_domain: finalDomain,
-          finalDestination: linkData.full_url
+          finalDestination: linkData.full_url,
+          alias_success: customAlias && tinyUrl.includes(customAlias)
         })
 
         // Update the record with the actual tracking URL and TinyURL
@@ -212,12 +257,13 @@ serve(async (req) => {
           continue
         }
 
-        console.log('Successfully created bulk link with tracking:', {
+        console.log('Successfully created bulk link with custom alias:', {
           id: data.id,
           email: linkData.email,
           short_url: tinyUrl,
           tracking_url: trackingUrl,
           domain: finalDomain,
+          custom_alias: customAlias,
           clicks_through: `${tinyUrl} → ${trackingUrl} → ${linkData.full_url}`
         })
 
@@ -227,6 +273,7 @@ serve(async (req) => {
           short_url: tinyUrl,
           tracking_url: trackingUrl,
           domain: finalDomain,
+          custom_alias: customAlias,
           status: 'success'
         })
 
@@ -248,7 +295,7 @@ serve(async (req) => {
         errors: errors.length,
         results,
         errors,
-        message: `Successfully processed ${results.length} links with click tracking enabled and proper domain handling`
+        message: `Successfully processed ${results.length} links with custom aliases and click tracking enabled`
       }),
       { 
         status: 200, 
