@@ -200,6 +200,13 @@ const Dashboard = () => {
     return source === 'bulk' ? <Globe className="w-4 h-4 text-blue-600" /> : <Users className="w-4 h-4 text-green-600" />;
   };
 
+  // Helper function to get the clickable URL for a link
+  const getClickableUrl = (link: UTMLinkWithEmail) => {
+    // For individual links, use tracking_url (which is the same as short_url)
+    // For bulk links, use tracking_url to ensure clicks are tracked
+    return link.tracking_url;
+  };
+
   return (
     <div className="max-w-7xl mx-auto p-6">
       <div className="mb-6">
@@ -344,7 +351,7 @@ const Dashboard = () => {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UTM Campaign</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code/Name</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Domain</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Short URL</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trackable URL</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Clicks</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
                   </tr>
@@ -370,13 +377,13 @@ const Dashboard = () => {
                       <td className="px-4 py-3 text-sm text-gray-900">{link.domain || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         <a
-                          href={link.short_url}
+                          href={getClickableUrl(link)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:text-blue-800 inline-flex items-center"
-                          title="This is the short URL that tracks clicks"
+                          title={`Click to track and redirect. URL: ${getClickableUrl(link)}`}
                         >
-                          {link.short_url.length > 50 ? `${link.short_url.substring(0, 50)}...` : link.short_url}
+                          {getClickableUrl(link).length > 50 ? `${getClickableUrl(link).substring(0, 50)}...` : getClickableUrl(link)}
                           <ExternalLink className="w-3 h-3 ml-1" />
                         </a>
                       </td>
