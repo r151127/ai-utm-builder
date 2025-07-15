@@ -1,11 +1,12 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
-import { Download, Search, Filter, ChevronLeft, ChevronRight, ExternalLink, RefreshCw } from 'lucide-react';
+import { Download, Search, Filter, ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Users, Globe } from 'lucide-react';
 
 interface UTMLink {
   id: string;
-  user_id: string;
+  user_id: string | null;
   program: string;
   channel: string;
   utm_source: string;
@@ -18,6 +19,8 @@ interface UTMLink {
   tracking_url: string;
   clicks: number;
   created_at: string;
+  email: string | null;
+  source: string;
 }
 
 interface UTMLinkWithEmail extends UTMLink {
@@ -36,6 +39,7 @@ const Dashboard = () => {
   const [filters, setFilters] = useState({
     program: '',
     channel: '',
+    source: '', // Add source filter
     dateFrom: '',
     dateTo: ''
   });
@@ -44,7 +48,7 @@ const Dashboard = () => {
 
   const pageSize = 50;
 
-  // Function to fetch user emails using the new edge function
+  // Function to fetch user emails using the existing edge function
   const fetchUserEmails = async (userIds: string[]): Promise<{ [key: string]: string }> => {
     try {
       console.log('Fetching user emails via edge function for:', userIds);
@@ -88,6 +92,9 @@ const Dashboard = () => {
       if (filters.channel) {
         query = query.eq('channel', filters.channel);
       }
+      if (filters.source) {
+        query = query.eq('source', filters.source);
+      }
       if (filters.dateFrom) {
         query = query.gte('created_at', filters.dateFrom);
       }
@@ -107,14 +114,20 @@ const Dashboard = () => {
 
       const utmLinks = data || [];
       
-      // Fetch user emails using the edge function
-      const userIds = utmLinks.map(link => link.user_id);
-      const emailMap = await fetchUserEmails(userIds);
+      // Separate individual and bulk links
+      const individualLinks = utmLinks.filter(link => link.source === 'individual' && link.user_id);
+      const bulkLinks = utmLinks.filter(link => link.source === 'bulk' || !link.user_id);
+      
+      // Fetch user emails for individual links only
+      const userIds = individualLinks.map(link => link.user_id).filter(Boolean);
+      const emailMap = userIds.length > 0 ? await fetchUserEmails(userIds) : {};
       
       // Combine links with email data
       const linksWithEmails: UTMLinkWithEmail[] = utmLinks.map(link => ({
         ...link,
-        user_email: emailMap[link.user_id] || 'Unknown'
+        user_email: link.source === 'bulk' || !link.user_id 
+          ? (link.email || 'Bulk Import') 
+          : (emailMap[link.user_id] || 'Unknown')
       }));
 
       setLinks(linksWithEmails);
@@ -144,11 +157,12 @@ const Dashboard = () => {
   const exportToCSV = () => {
     if (!links.length) return;
 
-    const headers = ['Email', 'Program', 'Channel', 'Source', 'Medium', 'Campaign', 'Code/Name', 'Domain', 'Trackable URL', 'Full URL', 'Clicks', 'Created At'];
+    const headers = ['Email', 'Source', 'Program', 'Channel', 'UTM Source', 'UTM Medium', 'UTM Campaign', 'Code/Name', 'Domain', 'Trackable URL', 'Full URL', 'Clicks', 'Created At'];
     const csvContent = [
       headers.join(','),
       ...links.map(link => [
         link.user_email,
+        link.source || 'individual',
         link.program,
         link.channel,
         link.utm_source,
@@ -182,6 +196,10 @@ const Dashboard = () => {
     });
   };
 
+  const getSourceIcon = (source: string) => {
+    return source === 'bulk' ? <Globe className="w-4 h-4 text-blue-600" /> : <Users className="w-4 h-4 text-green-600" />;
+  };
+
   return (
     <div className="max-w-7xl mx-auto p-6">
       <div className="mb-6">
@@ -213,10 +231,10 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Filters - remove email filter since we no longer have email column */}
+        {/* Filters */}
         {showFilters && (
           <div className="bg-gray-50 p-4 rounded-lg mb-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Program</label>
                 <select
@@ -247,6 +265,18 @@ const Dashboard = () => {
                 </select>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Source</label>
+                <select
+                  value={filters.source}
+                  onChange={(e) => setFilters({ ...filters, source: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                >
+                  <option value="">All Sources</option>
+                  <option value="individual">Individual (Web App)</option>
+                  <option value="bulk">Bulk (Sheet Import)</option>
+                </select>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date From</label>
                 <input
                   type="date"
@@ -268,7 +298,7 @@ const Dashboard = () => {
             <div className="mt-4 flex justify-end space-x-2">
               <button
                 onClick={() => {
-                  setFilters({ program: '', channel: '', dateFrom: '', dateTo: '' });
+                  setFilters({ program: '', channel: '', source: '', dateFrom: '', dateTo: '' });
                   setCurrentPage(1);
                   loadLinks(1);
                 }}
@@ -305,12 +335,13 @@ const Dashboard = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Program</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Channel</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Medium</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campaign</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UTM Source</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UTM Medium</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UTM Campaign</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code/Name</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Domain</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Short URL</th>
@@ -321,6 +352,14 @@ const Dashboard = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {links.map((link) => (
                     <tr key={link.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm">
+                        <div className="flex items-center">
+                          {getSourceIcon(link.source || 'individual')}
+                          <span className="ml-2 text-gray-900 capitalize">
+                            {link.source === 'bulk' ? 'Bulk' : 'Individual'}
+                          </span>
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-sm text-gray-900">{link.user_email}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{link.program}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{link.channel}</td>

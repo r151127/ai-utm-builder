@@ -43,14 +43,16 @@ export type Database = {
           code: string | null
           created_at: string | null
           domain: string | null
+          email: string | null
           full_url: string
           id: string
           placement: string
           platform: string
           program: string
           short_url: string
+          source: string | null
           tracking_url: string
-          user_id: string
+          user_id: string | null
           utm_campaign: string
           utm_medium: string
           utm_source: string
@@ -62,14 +64,16 @@ export type Database = {
           code?: string | null
           created_at?: string | null
           domain?: string | null
+          email?: string | null
           full_url: string
           id?: string
           placement: string
           platform: string
           program: string
           short_url: string
+          source?: string | null
           tracking_url: string
-          user_id: string
+          user_id?: string | null
           utm_campaign: string
           utm_medium: string
           utm_source: string
@@ -81,14 +85,16 @@ export type Database = {
           code?: string | null
           created_at?: string | null
           domain?: string | null
+          email?: string | null
           full_url?: string
           id?: string
           placement?: string
           platform?: string
           program?: string
           short_url?: string
+          source?: string | null
           tracking_url?: string
-          user_id?: string
+          user_id?: string | null
           utm_campaign?: string
           utm_medium?: string
           utm_source?: string
