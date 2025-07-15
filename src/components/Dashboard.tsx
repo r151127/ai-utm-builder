@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
 import { Download, Search, Filter, ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Users, Globe } from 'lucide-react';
@@ -35,6 +35,10 @@ const Dashboard = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
+  // Use refs to track loading state and prevent duplicate requests
+  const loadingRef = useRef(false);
+  const requestIdRef = useRef(0);
+
   // Filter states
   const [filters, setFilters] = useState({
     program: '',
@@ -60,19 +64,18 @@ const Dashboard = () => {
     try {
       console.log('Fetching user emails via edge function for:', userIds);
       
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Email fetch timeout')), 10000)
-      );
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
-      const fetchPromise = supabase.functions.invoke('get-user-emails', {
+      const { data, error } = await supabase.functions.invoke('get-user-emails', {
         body: { userIds }
       });
 
-      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+      clearTimeout(timeoutId);
 
       if (error) {
         console.error('Error calling get-user-emails function:', error);
+        // Return empty object instead of throwing to prevent blocking
         return {};
       }
 
@@ -81,20 +84,25 @@ const Dashboard = () => {
       
     } catch (error) {
       console.error('Error fetching user emails:', error);
+      // Return empty object instead of throwing to prevent blocking
       return {};
     }
   }, []);
 
-  // Stable loadLinks function with useCallback
-  const loadLinks = useCallback(async (page: number = 1, appliedFilters = filters) => {
-    // Prevent multiple simultaneous requests
-    if (loading && page === currentPage) {
-      console.log('Preventing duplicate request - already loading page:', page);
+  // Stable loadLinks function without circular dependencies
+  const loadLinks = useCallback(async (page: number, appliedFilters: typeof filters) => {
+    // Generate unique request ID
+    const requestId = ++requestIdRef.current;
+    
+    // Prevent duplicate requests
+    if (loadingRef.current) {
+      console.log('Request blocked - already loading. Request ID:', requestId);
       return;
     }
     
-    console.log('Loading links - page:', page, 'filters:', appliedFilters, 'user:', user?.id, 'isAdmin:', isAdmin);
+    console.log('Starting loadLinks - page:', page, 'filters:', appliedFilters, 'user:', user?.id, 'isAdmin:', isAdmin, 'requestId:', requestId);
     
+    loadingRef.current = true;
     setLoading(true);
     setError('');
 
@@ -134,12 +142,18 @@ const Dashboard = () => {
         .order('created_at', { ascending: false })
         .range(from, to);
 
+      // Check if this request is still current
+      if (requestId !== requestIdRef.current) {
+        console.log('Request cancelled - newer request in progress. RequestId:', requestId);
+        return;
+      }
+
       if (queryError) {
         console.error('Query error:', queryError);
         throw queryError;
       }
 
-      console.log('Fetched UTM links:', data?.length, 'Total count:', count);
+      console.log('Fetched UTM links:', data?.length, 'Total count:', count, 'requestId:', requestId);
       const utmLinks = data || [];
       
       // Separate individual and bulk links
@@ -148,40 +162,68 @@ const Dashboard = () => {
       
       console.log('Individual links:', individualLinks.length, 'Bulk links:', bulkLinks.length);
       
-      // Fetch user emails for individual links only
+      // Fetch user emails for individual links only with timeout
       const userIds = individualLinks.map(link => link.user_id).filter(Boolean);
-      const emailMap = userIds.length > 0 ? await fetchUserEmails(userIds) : {};
+      let emailMap = {};
+      
+      if (userIds.length > 0) {
+        try {
+          emailMap = await Promise.race([
+            fetchUserEmails(userIds),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Email fetch timeout')), 10000))
+          ]) as { [key: string]: string };
+        } catch (emailError) {
+          console.error('Email fetch failed, using fallback:', emailError);
+          emailMap = {}; // Use empty object as fallback
+        }
+      }
       
       // Combine links with email data
       const linksWithEmails: UTMLinkWithEmail[] = utmLinks.map(link => ({
         ...link,
         user_email: link.source === 'bulk' || !link.user_id 
           ? (link.email || 'Bulk Import') 
-          : (emailMap[link.user_id] || 'Unknown')
+          : (emailMap[link.user_id] || 'Unknown User')
       }));
 
-      console.log('Final links with emails:', linksWithEmails.length);
-      
-      setLinks(linksWithEmails);
-      setTotalPages(Math.ceil((count || 0) / pageSize));
-      setCurrentPage(page);
+      // Final check if request is still current before updating state
+      if (requestId === requestIdRef.current) {
+        console.log('Setting final state - links:', linksWithEmails.length, 'requestId:', requestId);
+        setLinks(linksWithEmails);
+        setTotalPages(Math.ceil((count || 0) / pageSize));
+        setCurrentPage(page);
+      } else {
+        console.log('Request obsolete - not updating state. RequestId:', requestId);
+      }
     } catch (err) {
-      console.error('Error loading links:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load links');
+      // Only update error state if this is still the current request
+      if (requestId === requestIdRef.current) {
+        console.error('Error loading links:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load links');
+      }
     } finally {
-      setLoading(false);
+      // Only update loading state if this is still the current request
+      if (requestId === requestIdRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+        console.log('Loading complete for requestId:', requestId);
+      }
     }
-  }, [isAdmin, user?.id, fetchUserEmails, filters, loading, currentPage]);
+  }, [isAdmin, user?.id, fetchUserEmails]);
 
-  // Initial load effect - only depend on auth state
+  // Initial load effect - only depend on auth state changes
   useEffect(() => {
-    console.log('Initial load effect triggered - user defined:', user !== undefined, 'user id:', user?.id);
+    console.log('Auth effect triggered - user defined:', user !== undefined, 'user id:', user?.id, 'isAdmin:', isAdmin);
     
-    if (user !== undefined) { // Wait for auth to be determined (could be null for logged out)
+    // Only load when auth is determined and we're not already loading
+    if (user !== undefined && !loadingRef.current) {
       console.log('Auth determined, loading initial data');
-      loadLinks(1, { program: '', channel: '', source: '', dateFrom: '', dateTo: '' });
+      const initialFilters = { program: '', channel: '', source: '', dateFrom: '', dateTo: '' };
+      setFilters(initialFilters);
+      setCurrentPage(1);
+      loadLinks(1, initialFilters);
     }
-  }, [user, isAdmin]); // Only depend on auth state changes
+  }, [user, isAdmin]); // Only depend on auth state
 
   const handleFilter = useCallback(() => {
     console.log('Applying filters:', filters);
@@ -241,13 +283,8 @@ const Dashboard = () => {
     return source === 'bulk' ? <Globe className="w-4 h-4 text-blue-600" /> : <Users className="w-4 h-4 text-green-600" />;
   }, []);
 
-  // Always use short_url (TinyURL) for both individual and bulk links
-  const getClickableUrl = useCallback((link: UTMLinkWithEmail) => {
-    return link.short_url;
-  }, []);
-
   const refreshData = useCallback(() => {
-    console.log('Refreshing data');
+    console.log('Refreshing data - currentPage:', currentPage, 'filters:', filters);
     loadLinks(currentPage, filters);
   }, [loadLinks, currentPage, filters]);
 
@@ -426,13 +463,13 @@ const Dashboard = () => {
                       <td className="px-4 py-3 text-sm text-gray-900">{link.domain || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         <a
-                          href={getClickableUrl(link)}
+                          href={link.short_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:text-blue-800 inline-flex items-center"
-                          title={`TinyURL that tracks clicks: ${getClickableUrl(link)}`}
+                          title={`TinyURL that tracks clicks: ${link.short_url}`}
                         >
-                          {getClickableUrl(link).length > 50 ? `${getClickableUrl(link).substring(0, 50)}...` : getClickableUrl(link)}
+                          {link.short_url.length > 50 ? `${link.short_url.substring(0, 50)}...` : link.short_url}
                           <ExternalLink className="w-3 h-3 ml-1" />
                         </a>
                       </td>

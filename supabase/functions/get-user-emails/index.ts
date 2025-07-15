@@ -39,46 +39,59 @@ serve(async (req) => {
     const emailMap: { [key: string]: string } = {}
 
     // Get unique user IDs and limit batch size to prevent timeouts
-    const uniqueUserIds = [...new Set(userIds)].slice(0, 50) // Limit to 50 users max
+    const uniqueUserIds = [...new Set(userIds)].slice(0, 30) // Reduced to 30 users max
     
     console.log(`Processing ${uniqueUserIds.length} unique user IDs`)
 
     // Process users in smaller batches for better performance
-    const batchSize = 10
-    for (let i = 0; i < uniqueUserIds.length; i += batchSize) {
-      const batch = uniqueUserIds.slice(i, i + batchSize)
-      console.log(`Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(uniqueUserIds.length/batchSize)}:`, batch)
+    const batchSize = 5 // Reduced batch size
+    const maxConcurrentBatches = 2 // Limit concurrent processing
+    
+    for (let i = 0; i < uniqueUserIds.length; i += batchSize * maxConcurrentBatches) {
+      const batchPromises = []
       
-      // Process batch concurrently with timeout
-      const batchPromises = batch.map(async (userId) => {
-        try {
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`Timeout for user ${userId}`)), 5000)
-          )
+      // Create up to maxConcurrentBatches batches
+      for (let j = 0; j < maxConcurrentBatches && (i + j * batchSize) < uniqueUserIds.length; j++) {
+        const start = i + j * batchSize
+        const batch = uniqueUserIds.slice(start, start + batchSize)
+        
+        if (batch.length > 0) {
+          console.log(`Processing batch starting at ${start}:`, batch)
           
-          const userPromise = supabase.auth.admin.getUserById(userId)
+          const batchPromise = Promise.all(batch.map(async (userId) => {
+            try {
+              // Create timeout promise
+              const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error(`Timeout for user ${userId}`)), 3000)
+              )
+              
+              const userPromise = supabase.auth.admin.getUserById(userId)
+              
+              const { data: userData, error: userError } = await Promise.race([userPromise, timeoutPromise]) as any
+              
+              if (!userError && userData?.user?.email) {
+                emailMap[userId] = userData.user.email
+                console.log(`✓ Found email for user ${userId}: ${userData.user.email}`)
+              } else {
+                console.warn(`⚠ No email found for user ${userId}:`, userError?.message || 'No data')
+                emailMap[userId] = 'Unknown'
+              }
+            } catch (err) {
+              console.error(`✗ Error fetching email for user ${userId}:`, err.message)
+              emailMap[userId] = 'Unknown'
+            }
+          }))
           
-          const { data: userData, error: userError } = await Promise.race([userPromise, timeoutPromise]) as any
-          
-          if (!userError && userData?.user?.email) {
-            emailMap[userId] = userData.user.email
-            console.log(`✓ Found email for user ${userId}: ${userData.user.email}`)
-          } else {
-            console.warn(`⚠ No email found for user ${userId}:`, userError?.message || 'No data')
-            emailMap[userId] = 'Unknown'
-          }
-        } catch (err) {
-          console.error(`✗ Error fetching email for user ${userId}:`, err.message)
-          emailMap[userId] = 'Unknown'
+          batchPromises.push(batchPromise)
         }
-      })
+      }
 
-      // Wait for batch to complete
+      // Wait for all batches in this group to complete
       await Promise.allSettled(batchPromises)
       
-      // Small delay between batches to prevent overwhelming the auth service
-      if (i + batchSize < uniqueUserIds.length) {
-        await new Promise(resolve => setTimeout(resolve, 100))
+      // Small delay between batch groups to prevent overwhelming the auth service
+      if (i + batchSize * maxConcurrentBatches < uniqueUserIds.length) {
+        await new Promise(resolve => setTimeout(resolve, 200))
       }
     }
 
