@@ -22,7 +22,7 @@ interface BulkUTMData {
   short_url?: string; // This is optional now since we'll create it
 }
 
-// Function to extract domain from URL
+// Function to extract domain from URL (fallback only)
 function extractDomainFromUrl(url: string): string {
   try {
     const urlObj = new URL(url);
@@ -117,8 +117,8 @@ serve(async (req) => {
           continue
         }
 
-        // Extract domain from full_url instead of using the provided domain
-        const extractedDomain = extractDomainFromUrl(linkData.full_url);
+        // Use domain from CSV if provided, otherwise extract from URL as fallback
+        const finalDomain = linkData.domain || extractDomainFromUrl(linkData.full_url);
 
         // First, insert the record to get an ID
         const insertData = {
@@ -128,7 +128,7 @@ serve(async (req) => {
           platform: linkData.platform,
           placement: linkData.placement,
           code: linkData.code || null,
-          domain: extractedDomain, // Use extracted domain instead of linkData.domain
+          domain: finalDomain, // Use CSV domain or URL fallback
           utm_source: linkData.utm_source,
           utm_medium: linkData.utm_medium,
           utm_campaign: linkData.utm_campaign,
@@ -146,7 +146,8 @@ serve(async (req) => {
           program: insertData.program,
           channel: insertData.channel,
           full_url: insertData.full_url,
-          extracted_domain: extractedDomain
+          csv_domain: linkData.domain,
+          final_domain: finalDomain
         })
 
         // Insert into database to get the ID
@@ -175,7 +176,8 @@ serve(async (req) => {
           id: data.id,
           trackingUrl,
           tinyUrl,
-          extractedDomain,
+          csv_domain: linkData.domain,
+          final_domain: finalDomain,
           finalDestination: linkData.full_url
         })
 
@@ -202,7 +204,7 @@ serve(async (req) => {
           email: linkData.email,
           short_url: tinyUrl,
           tracking_url: trackingUrl,
-          domain: extractedDomain,
+          domain: finalDomain,
           clicks_through: `${tinyUrl} → ${trackingUrl} → ${linkData.full_url}`
         })
 
@@ -211,7 +213,7 @@ serve(async (req) => {
           id: data.id,
           short_url: tinyUrl,
           tracking_url: trackingUrl,
-          domain: extractedDomain,
+          domain: finalDomain,
           status: 'success'
         })
 
@@ -233,7 +235,7 @@ serve(async (req) => {
         errors: errors.length,
         results,
         errors,
-        message: `Successfully processed ${results.length} links with click tracking enabled and proper domain extraction`
+        message: `Successfully processed ${results.length} links with click tracking enabled and proper domain handling`
       }),
       { 
         status: 200, 
