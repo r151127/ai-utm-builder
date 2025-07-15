@@ -101,17 +101,17 @@ const Dashboard = () => {
     }
 
     const headers = [
-      'Full URL', 'Short URL', 'Tracking URL', 'Clicks', 'Program', 'Channel', 
+      'Created At', 'Source', 'Short URL', 'Clicks', 'Program', 'Channel', 
       'Platform', 'Placement', 'Email', 'UTM Source', 'UTM Medium', 'UTM Campaign',
-      'CBA', 'Code', 'Domain', 'Source', 'Created At'
+      'CBA', 'Code', 'Domain', 'Full URL'
     ];
 
     const csvContent = [
       headers.join(','),
       ...utmAnalytics.map(link => [
-        `"${link.full_url}"`,
+        `"${link.created_at ? new Date(link.created_at).toLocaleDateString() : ''}"`,
+        `"${link.source || 'individual'}"`,
         `"${link.short_url}"`,
-        `"${link.tracking_url}"`,
         link.clicks || 0,
         `"${link.program}"`,
         `"${link.channel}"`,
@@ -124,8 +124,7 @@ const Dashboard = () => {
         `"${link.cba || ''}"`,
         `"${link.code || ''}"`,
         `"${link.domain || ''}"`,
-        `"${link.source || ''}"`,
-        `"${link.created_at ? new Date(link.created_at).toLocaleDateString() : ''}"`
+        `"${link.full_url}"`
       ].join(','))
     ].join('\n');
 
@@ -285,9 +284,10 @@ const Dashboard = () => {
               <TableCaption>A list of your UTM links with comprehensive tracking details.</TableCaption>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[200px]">Full URL</TableHead>
-                  <TableHead className="w-[150px]">Short URL</TableHead>
-                  <TableHead className="w-[150px]">Tracking URL</TableHead>
+                  <TableHead className="w-[120px]">Created</TableHead>
+                  <TableHead className="w-[100px]">Source</TableHead>
+                  <TableHead className="w-[180px]">Short URL</TableHead>
+                  <TableHead className="w-[120px]">Actions</TableHead>
                   <TableHead className="w-[80px]">Clicks</TableHead>
                   <TableHead className="w-[100px]">Program</TableHead>
                   <TableHead className="w-[120px]">Channel</TableHead>
@@ -300,23 +300,19 @@ const Dashboard = () => {
                   <TableHead className="w-[80px]">CBA</TableHead>
                   <TableHead className="w-[80px]">Code</TableHead>
                   <TableHead className="w-[100px]">Domain</TableHead>
-                  <TableHead className="w-[80px]">Source</TableHead>
-                  <TableHead className="w-[100px]">Created</TableHead>
-                  <TableHead className="text-right w-[120px]">Actions</TableHead>
+                  <TableHead className="w-[200px]">Full URL</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {utmAnalytics.map((link) => (
                   <TableRow key={link.id}>
+                    <TableCell className="text-sm font-medium">
+                      {link.created_at ? new Date(link.created_at).toLocaleDateString() : '-'}
+                    </TableCell>
                     <TableCell>
-                      <a 
-                        href={link.full_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                      >
-                        {link.full_url.length > 40 ? link.full_url.substring(0, 40) + "..." : link.full_url}
-                      </a>
+                      <Badge variant={link.source === 'bulk' ? 'secondary' : 'outline'}>
+                        {link.source || 'individual'}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <a 
@@ -325,18 +321,25 @@ const Dashboard = () => {
                         rel="noopener noreferrer" 
                         className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
                       >
-                        {link.short_url.length > 25 ? link.short_url.substring(0, 25) + "..." : link.short_url}
+                        {link.short_url.length > 30 ? link.short_url.substring(0, 30) + "..." : link.short_url}
                       </a>
                     </TableCell>
                     <TableCell>
-                      <a 
-                        href={link.tracking_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                      >
-                        {link.tracking_url.length > 25 ? link.tracking_url.substring(0, 25) + "..." : link.tracking_url}
-                      </a>
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={() => copyToClipboard(link.short_url)}
+                          className="copy-button h-8 w-8"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                        <a href={link.short_url} target="_blank" rel="noopener noreferrer">
+                          <Button variant="outline" size="icon" className="h-8 w-8">
+                            <ExternalLink className="h-3 w-3" />
+                          </Button>
+                        </a>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <span className={getClicksColor(link.clicks)}>
@@ -355,7 +358,7 @@ const Dashboard = () => {
                     </TableCell>
                     <TableCell className="text-sm">{link.platform}</TableCell>
                     <TableCell className="text-sm">{link.placement}</TableCell>
-                    <TableCell className="text-sm">{link.email || '-'}</TableCell>
+                    <TableCell className="text-sm font-medium">{link.email || '-'}</TableCell>
                     <TableCell className="text-sm">{link.utm_source}</TableCell>
                     <TableCell className="text-sm">{link.utm_medium}</TableCell>
                     <TableCell className="text-sm">{link.utm_campaign}</TableCell>
@@ -363,29 +366,14 @@ const Dashboard = () => {
                     <TableCell className="text-sm">{link.code || '-'}</TableCell>
                     <TableCell className="text-sm">{link.domain || '-'}</TableCell>
                     <TableCell>
-                      <Badge variant={link.source === 'bulk' ? 'secondary' : 'outline'}>
-                        {link.source || 'individual'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {link.created_at ? new Date(link.created_at).toLocaleDateString() : '-'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button 
-                          variant="outline" 
-                          size="icon" 
-                          onClick={() => copyToClipboard(link.short_url)}
-                          className="copy-button h-8 w-8"
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                        <a href={link.full_url} target="_blank" rel="noopener noreferrer">
-                          <Button variant="outline" size="icon" className="h-8 w-8">
-                            <ExternalLink className="h-3 w-3" />
-                          </Button>
-                        </a>
-                      </div>
+                      <a 
+                        href={link.full_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                      >
+                        {link.full_url.length > 40 ? link.full_url.substring(0, 40) + "..." : link.full_url}
+                      </a>
                     </TableCell>
                   </TableRow>
                 ))}
