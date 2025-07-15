@@ -117,8 +117,20 @@ serve(async (req) => {
           continue
         }
 
-        // Use domain from CSV if provided, otherwise extract from URL as fallback
-        const finalDomain = linkData.domain || extractDomainFromUrl(linkData.full_url);
+        // Enhanced logging for domain debugging
+        console.log('=== DOMAIN DEBUG START ===')
+        console.log('CSV domain value (raw):', linkData.domain)
+        console.log('CSV domain type:', typeof linkData.domain)
+        console.log('CSV domain length:', linkData.domain ? linkData.domain.length : 'undefined')
+        console.log('CSV domain empty check:', !linkData.domain)
+        console.log('Full URL:', linkData.full_url)
+        
+        // Use domain from CSV if provided and not empty, otherwise extract from URL as fallback
+        const finalDomain = (linkData.domain && linkData.domain.trim()) ? linkData.domain.trim() : extractDomainFromUrl(linkData.full_url);
+        
+        console.log('Final domain used:', finalDomain)
+        console.log('Domain source:', (linkData.domain && linkData.domain.trim()) ? 'CSV' : 'URL_FALLBACK')
+        console.log('=== DOMAIN DEBUG END ===')
 
         // First, insert the record to get an ID
         const insertData = {
@@ -147,7 +159,8 @@ serve(async (req) => {
           channel: insertData.channel,
           full_url: insertData.full_url,
           csv_domain: linkData.domain,
-          final_domain: finalDomain
+          final_domain: finalDomain,
+          domain_source: (linkData.domain && linkData.domain.trim()) ? 'CSV' : 'URL_FALLBACK'
         })
 
         // Insert into database to get the ID
