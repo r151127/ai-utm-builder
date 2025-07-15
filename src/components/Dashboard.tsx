@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +9,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from '@/integrations/supabase/client';
 import { Tables } from '@/integrations/supabase/types';
-import { BulkLinksFixer } from './BulkLinksFixer';
 
 interface UTMAnalytics extends Tables<'utm_links'> {}
 
@@ -86,11 +86,6 @@ const Dashboard = () => {
             <Upload className="mr-2 h-4 w-4" />
             Bulk Import
           </Button>
-        </div>
-
-        {/* Add the BulkLinksFixer component */}
-        <div className="mb-8">
-          <BulkLinksFixer />
         </div>
 
         <div className="mb-6">
