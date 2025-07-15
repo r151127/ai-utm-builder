@@ -44,30 +44,23 @@ const Dashboard = () => {
 
   const pageSize = 50;
 
-  // Function to fetch user emails for given user IDs
+  // Function to fetch user emails using the new edge function
   const fetchUserEmails = async (userIds: string[]): Promise<{ [key: string]: string }> => {
     try {
-      // Get unique user IDs
-      const uniqueUserIds = [...new Set(userIds)];
+      console.log('Fetching user emails via edge function for:', userIds);
       
-      // Fetch user data from Supabase Auth
-      const emailMap: { [key: string]: string } = {};
-      
-      for (const userId of uniqueUserIds) {
-        try {
-          const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
-          if (!userError && userData?.user?.email) {
-            emailMap[userId] = userData.user.email;
-          } else {
-            emailMap[userId] = 'Unknown';
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch email for user ${userId}:`, err);
-          emailMap[userId] = 'Unknown';
-        }
+      const { data, error } = await supabase.functions.invoke('get-user-emails', {
+        body: { userIds }
+      });
+
+      if (error) {
+        console.error('Error calling get-user-emails function:', error);
+        return {};
       }
+
+      console.log('Email mapping received:', data?.emailMap);
+      return data?.emailMap || {};
       
-      return emailMap;
     } catch (error) {
       console.error('Error fetching user emails:', error);
       return {};
@@ -114,7 +107,7 @@ const Dashboard = () => {
 
       const utmLinks = data || [];
       
-      // Fetch user emails
+      // Fetch user emails using the edge function
       const userIds = utmLinks.map(link => link.user_id);
       const emailMap = await fetchUserEmails(userIds);
       
@@ -320,7 +313,7 @@ const Dashboard = () => {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campaign</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code/Name</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Domain</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trackable URL</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Short URL</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Clicks</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
                   </tr>
@@ -338,13 +331,13 @@ const Dashboard = () => {
                       <td className="px-4 py-3 text-sm text-gray-900">{link.domain || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         <a
-                          href={link.tracking_url}
+                          href={link.short_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:text-blue-800 inline-flex items-center"
-                          title="This is the trackable URL that counts clicks"
+                          title="This is the short URL that tracks clicks"
                         >
-                          {link.tracking_url.replace('https://msrfiyovfhgyzeivrtlr.supabase.co/functions/v1/track-click?id=', 'track/')}
+                          {link.short_url.length > 50 ? `${link.short_url.substring(0, 50)}...` : link.short_url}
                           <ExternalLink className="w-3 h-3 ml-1" />
                         </a>
                       </td>

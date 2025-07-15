@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.shorten-url]
 verify_jwt = false
+
+[functions.get-user-emails]
+verify_jwt = false

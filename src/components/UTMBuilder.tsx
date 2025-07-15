@@ -146,7 +146,11 @@ const UTMBuilder = () => {
       const { data, error } = await supabase.functions.invoke('shorten-url', {
         body: {
           url: fullUrl,
-          customAlias: customAlias
+          customAlias: customAlias,
+          program: formData.program,
+          channel: formData.channel,
+          code: formData.cbaCode,
+          codeName: formData.codeName
         }
       });
 
@@ -223,12 +227,7 @@ const UTMBuilder = () => {
       const fullUrl = `${baseUrl}?${urlParams.toString()}`;
       console.log('Full URL generated:', fullUrl);
 
-      // Generate short URL using edge function
-      console.log('Generating short URL...');
-      const shortUrl = await generateShortUrl(fullUrl, formData.domain || undefined);
-      console.log('Short URL generated:', shortUrl);
-
-      // Save to database
+      // Save to database first to get ID for tracking URL
       console.log('Saving to database...');
       const { data: linkData, error: dbError } = await supabase
         .from('utm_links')
@@ -245,7 +244,7 @@ const UTMBuilder = () => {
           utm_medium: utmMedium,
           utm_campaign: utmCampaign,
           full_url: fullUrl,
-          short_url: shortUrl,
+          short_url: '', // Will be updated after we get the short URL
           tracking_url: '', // Will be updated after we get the ID
           clicks: 0
         })
@@ -267,23 +266,31 @@ const UTMBuilder = () => {
       const trackingUrl = `https://msrfiyovfhgyzeivrtlr.supabase.co/functions/v1/track-click?id=${linkData.id}`;
       console.log('Tracking URL generated:', trackingUrl);
 
-      // Update the record with the tracking URL
-      console.log('Updating record with tracking URL...');
+      // Generate short URL using the tracking URL
+      console.log('Generating short URL...');
+      const shortUrl = await generateShortUrl(trackingUrl, formData.domain || undefined);
+      console.log('Short URL generated:', shortUrl);
+
+      // Update the record with the short URL and tracking URL
+      console.log('Updating record with URLs...');
       const { error: updateError } = await supabase
         .from('utm_links')
-        .update({ tracking_url: trackingUrl })
+        .update({ 
+          short_url: shortUrl,
+          tracking_url: trackingUrl 
+        })
         .eq('id', linkData.id);
 
       if (updateError) {
-        console.error('Error updating tracking URL:', updateError);
+        console.error('Error updating URLs:', updateError);
         // Don't throw here - we still have the links, just log the error
       }
 
       console.log('Process completed successfully');
-      // Show the tracking URL as the "Short URL" since that's what users should share
+      // Show the short URL as the main shareable link
       setResult({
         fullUrl,
-        shortUrl: trackingUrl
+        shortUrl: shortUrl
       });
 
       toast({
@@ -488,7 +495,7 @@ const UTMBuilder = () => {
           </button>
         </form>
 
-        {/* Results */}
+        {/* Updated Results Section */}
         {result && (
           <div className="mt-8 p-6 bg-green-50 rounded-lg border border-green-200">
             <h3 className="text-lg font-medium text-green-900 mb-4">Generated Links</h3>
@@ -496,7 +503,7 @@ const UTMBuilder = () => {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-green-700 mb-2">
-                  📊 Trackable Short URL (Share this link - it will count clicks):
+                  📊 Short URL (Share this link - it tracks clicks automatically):
                 </label>
                 <div className="flex items-center space-x-2">
                   <input
@@ -523,7 +530,7 @@ const UTMBuilder = () => {
                   </a>
                 </div>
                 <p className="text-xs text-green-600 mt-1">
-                  ✨ This URL automatically tracks clicks and redirects to your landing page with UTM parameters
+                  ✨ This shortened URL automatically tracks clicks and redirects to your landing page with UTM parameters
                 </p>
               </div>
 
@@ -555,7 +562,7 @@ const UTMBuilder = () => {
             <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
               <h4 className="font-medium text-blue-900 mb-1">📈 How to use:</h4>
               <ul className="text-sm text-blue-700 space-y-1">
-                <li>• Share the <strong>Trackable Short URL</strong> with your audience</li>
+                <li>• Share the <strong>Short URL</strong> with your audience</li>
                 <li>• Every click will be automatically counted in your dashboard</li>
                 <li>• Users will be redirected to your landing page with UTM parameters</li>
                 <li>• UTM parameters will be tracked in your analytics (Google Analytics, etc.)</li>
