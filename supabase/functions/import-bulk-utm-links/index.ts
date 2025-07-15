@@ -72,8 +72,8 @@ serve(async (req) => {
           continue
         }
 
-        // Generate tracking URL with click tracking
-        const trackingUrl = `${supabaseUrl}/functions/v1/track-click?id={{ID}}&redirect=${encodeURIComponent(linkData.short_url)}`
+        // Generate tracking URL with click tracking (simplified format like individual links)
+        const trackingUrl = `${supabaseUrl}/functions/v1/track-click?id={{ID}}`
 
         // Prepare data for insertion
         const insertData = {
