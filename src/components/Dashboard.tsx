@@ -48,14 +48,28 @@ const Dashboard = () => {
 
   const pageSize = 50;
 
-  // Function to fetch user emails using the existing edge function
+  console.log('Dashboard render - user:', user?.id, 'isAdmin:', isAdmin, 'loading:', loading);
+
+  // Function to fetch user emails using the edge function
   const fetchUserEmails = useCallback(async (userIds: string[]): Promise<{ [key: string]: string }> => {
+    if (!userIds.length) {
+      console.log('No user IDs to fetch emails for');
+      return {};
+    }
+
     try {
       console.log('Fetching user emails via edge function for:', userIds);
       
-      const { data, error } = await supabase.functions.invoke('get-user-emails', {
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Email fetch timeout')), 10000)
+      );
+
+      const fetchPromise = supabase.functions.invoke('get-user-emails', {
         body: { userIds }
       });
+
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
 
       if (error) {
         console.error('Error calling get-user-emails function:', error);
@@ -71,10 +85,15 @@ const Dashboard = () => {
     }
   }, []);
 
-  const loadLinks = useCallback(async (page = 1) => {
+  // Stable loadLinks function with useCallback
+  const loadLinks = useCallback(async (page: number = 1, appliedFilters = filters) => {
+    // Prevent multiple simultaneous requests
     if (loading && page === currentPage) {
-      return; // Prevent multiple simultaneous requests
+      console.log('Preventing duplicate request - already loading page:', page);
+      return;
     }
+    
+    console.log('Loading links - page:', page, 'filters:', appliedFilters, 'user:', user?.id, 'isAdmin:', isAdmin);
     
     setLoading(true);
     setError('');
@@ -86,24 +105,25 @@ const Dashboard = () => {
 
       // Apply user restriction for non-admin users
       if (!isAdmin && user?.id) {
+        console.log('Applying user filter for non-admin user:', user.id);
         query = query.eq('user_id', user.id);
       }
 
       // Apply filters
-      if (filters.program) {
-        query = query.eq('program', filters.program);
+      if (appliedFilters.program) {
+        query = query.eq('program', appliedFilters.program);
       }
-      if (filters.channel) {
-        query = query.eq('channel', filters.channel);
+      if (appliedFilters.channel) {
+        query = query.eq('channel', appliedFilters.channel);
       }
-      if (filters.source) {
-        query = query.eq('source', filters.source);
+      if (appliedFilters.source) {
+        query = query.eq('source', appliedFilters.source);
       }
-      if (filters.dateFrom) {
-        query = query.gte('created_at', filters.dateFrom);
+      if (appliedFilters.dateFrom) {
+        query = query.gte('created_at', appliedFilters.dateFrom);
       }
-      if (filters.dateTo) {
-        query = query.lte('created_at', filters.dateTo + 'T23:59:59');
+      if (appliedFilters.dateTo) {
+        query = query.lte('created_at', appliedFilters.dateTo + 'T23:59:59');
       }
 
       // Apply pagination
@@ -119,11 +139,14 @@ const Dashboard = () => {
         throw queryError;
       }
 
+      console.log('Fetched UTM links:', data?.length, 'Total count:', count);
       const utmLinks = data || [];
       
       // Separate individual and bulk links
       const individualLinks = utmLinks.filter(link => link.source === 'individual' && link.user_id);
       const bulkLinks = utmLinks.filter(link => link.source === 'bulk' || !link.user_id);
+      
+      console.log('Individual links:', individualLinks.length, 'Bulk links:', bulkLinks.length);
       
       // Fetch user emails for individual links only
       const userIds = individualLinks.map(link => link.user_id).filter(Boolean);
@@ -137,6 +160,8 @@ const Dashboard = () => {
           : (emailMap[link.user_id] || 'Unknown')
       }));
 
+      console.log('Final links with emails:', linksWithEmails.length);
+      
       setLinks(linksWithEmails);
       setTotalPages(Math.ceil((count || 0) / pageSize));
       setCurrentPage(page);
@@ -146,23 +171,28 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, user?.id, filters, fetchUserEmails, loading, currentPage]);
+  }, [isAdmin, user?.id, fetchUserEmails, filters, loading, currentPage]);
 
-  // Initial load - only depend on auth state, not filters
+  // Initial load effect - only depend on auth state
   useEffect(() => {
-    if (user !== undefined) { // Wait for auth to be determined
-      loadLinks(1);
+    console.log('Initial load effect triggered - user defined:', user !== undefined, 'user id:', user?.id);
+    
+    if (user !== undefined) { // Wait for auth to be determined (could be null for logged out)
+      console.log('Auth determined, loading initial data');
+      loadLinks(1, { program: '', channel: '', source: '', dateFrom: '', dateTo: '' });
     }
-  }, [isAdmin, user?.id]); // Remove filters and loadLinks from dependencies
+  }, [user, isAdmin]); // Only depend on auth state changes
 
   const handleFilter = useCallback(() => {
+    console.log('Applying filters:', filters);
     setCurrentPage(1);
-    loadLinks(1);
-  }, [loadLinks]);
+    loadLinks(1, filters);
+  }, [filters, loadLinks]);
 
   const handlePageChange = useCallback((page: number) => {
-    loadLinks(page);
-  }, [loadLinks]);
+    console.log('Changing to page:', page);
+    loadLinks(page, filters);
+  }, [loadLinks, filters]);
 
   const exportToCSV = useCallback(() => {
     if (!links.length) return;
@@ -211,15 +241,17 @@ const Dashboard = () => {
     return source === 'bulk' ? <Globe className="w-4 h-4 text-blue-600" /> : <Users className="w-4 h-4 text-green-600" />;
   }, []);
 
-  // Helper function to get the clickable URL for a link - Always use TinyURL (short_url)
+  // Always use short_url (TinyURL) for both individual and bulk links
   const getClickableUrl = useCallback((link: UTMLinkWithEmail) => {
-    // Always use short_url (TinyURL) for both individual and bulk links
     return link.short_url;
   }, []);
 
   const refreshData = useCallback(() => {
-    loadLinks(currentPage);
-  }, [loadLinks, currentPage]);
+    console.log('Refreshing data');
+    loadLinks(currentPage, filters);
+  }, [loadLinks, currentPage, filters]);
+
+  console.log('Rendering dashboard - loading:', loading, 'links count:', links.length, 'error:', error);
 
   return (
     <div className="max-w-7xl mx-auto p-6">
@@ -320,9 +352,10 @@ const Dashboard = () => {
             <div className="mt-4 flex justify-end space-x-2">
               <button
                 onClick={() => {
-                  setFilters({ program: '', channel: '', source: '', dateFrom: '', dateTo: '' });
+                  const resetFilters = { program: '', channel: '', source: '', dateFrom: '', dateTo: '' };
+                  setFilters(resetFilters);
                   setCurrentPage(1);
-                  loadLinks(1);
+                  loadLinks(1, resetFilters);
                 }}
                 className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 transition-colors"
               >
@@ -348,6 +381,7 @@ const Dashboard = () => {
       {loading ? (
         <div className="flex justify-center items-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <span className="ml-3 text-gray-600">Loading dashboard...</span>
         </div>
       ) : (
         <>
