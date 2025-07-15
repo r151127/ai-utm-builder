@@ -19,7 +19,42 @@ interface BulkUTMData {
   utm_medium: string;
   utm_campaign: string;
   full_url: string;
-  short_url: string; // This should be the TinyURL
+  short_url?: string; // This is optional now since we'll create it
+}
+
+// Function to create TinyURL that points to our tracking endpoint
+async function createTrackingTinyURL(trackingUrl: string): Promise<string> {
+  const tinyUrlToken = Deno.env.get('TINYURL_API_TOKEN');
+  
+  if (!tinyUrlToken) {
+    console.warn('TinyURL API token not found, using tracking URL directly');
+    return trackingUrl;
+  }
+
+  try {
+    const response = await fetch('https://api.tinyurl.com/create', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${tinyUrlToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: trackingUrl,
+        domain: 'tinyurl.com'
+      })
+    });
+
+    if (!response.ok) {
+      console.error('TinyURL API error:', response.status, await response.text());
+      return trackingUrl;
+    }
+
+    const data = await response.json();
+    return data.data?.tiny_url || trackingUrl;
+  } catch (error) {
+    console.error('Error creating TinyURL:', error);
+    return trackingUrl;
+  }
 }
 
 serve(async (req) => {
@@ -63,8 +98,7 @@ serve(async (req) => {
       try {
         // Validate required fields
         if (!linkData.email || !linkData.program || !linkData.channel || 
-            !linkData.platform || !linkData.placement || !linkData.full_url || 
-            !linkData.short_url) {
+            !linkData.platform || !linkData.placement || !linkData.full_url) {
           errors.push({
             email: linkData.email || 'unknown',
             error: 'Missing required fields'
@@ -72,10 +106,7 @@ serve(async (req) => {
           continue
         }
 
-        // Generate tracking URL that bulk imports will use for click tracking
-        const trackingUrl = `${supabaseUrl}/functions/v1/track-click?id={{ID}}`
-
-        // Prepare data for insertion - short_url is the TinyURL from the sheet
+        // First, insert the record to get an ID
         const insertData = {
           email: linkData.email,
           program: linkData.program,
@@ -88,11 +119,11 @@ serve(async (req) => {
           utm_medium: linkData.utm_medium,
           utm_campaign: linkData.utm_campaign,
           full_url: linkData.full_url,
-          short_url: linkData.short_url, // TinyURL from the sheet
-          tracking_url: trackingUrl, // Our tracking endpoint
+          short_url: '', // Temporary, will be updated
+          tracking_url: '', // Temporary, will be updated
           clicks: 0,
           source: 'bulk',
-          user_id: null, // Bulk imports don't have user accounts
+          user_id: null,
           created_at: new Date().toISOString()
         }
 
@@ -100,11 +131,10 @@ serve(async (req) => {
           email: insertData.email,
           program: insertData.program,
           channel: insertData.channel,
-          short_url: insertData.short_url,
           full_url: insertData.full_url
         })
 
-        // Insert into database
+        // Insert into database to get the ID
         const { data, error } = await supabase
           .from('utm_links')
           .insert(insertData)
@@ -120,26 +150,50 @@ serve(async (req) => {
           continue
         }
 
-        // Update tracking URL with actual ID
-        const actualTrackingUrl = trackingUrl.replace('{{ID}}', data.id)
+        // Create tracking URL with the actual ID
+        const trackingUrl = `${supabaseUrl}/functions/v1/track-click?id=${data.id}`
         
-        await supabase
+        // Create TinyURL that points to our tracking endpoint
+        const tinyUrl = await createTrackingTinyURL(trackingUrl)
+
+        console.log('Created tracking setup:', {
+          id: data.id,
+          trackingUrl,
+          tinyUrl,
+          finalDestination: linkData.full_url
+        })
+
+        // Update the record with the actual tracking URL and TinyURL
+        const { error: updateError } = await supabase
           .from('utm_links')
-          .update({ tracking_url: actualTrackingUrl })
+          .update({ 
+            tracking_url: trackingUrl,
+            short_url: tinyUrl
+          })
           .eq('id', data.id)
 
-        console.log('Successfully inserted bulk link:', {
+        if (updateError) {
+          console.error('Error updating with URLs:', updateError)
+          errors.push({
+            email: linkData.email,
+            error: `Failed to update URLs: ${updateError.message}`
+          })
+          continue
+        }
+
+        console.log('Successfully created bulk link with tracking:', {
           id: data.id,
           email: linkData.email,
-          short_url: linkData.short_url,
-          tracking_url: actualTrackingUrl
+          short_url: tinyUrl,
+          tracking_url: trackingUrl,
+          clicks_through: `${tinyUrl} → ${trackingUrl} → ${linkData.full_url}`
         })
 
         results.push({
           email: linkData.email,
           id: data.id,
-          short_url: linkData.short_url, // Return the TinyURL
-          tracking_url: actualTrackingUrl,
+          short_url: tinyUrl,
+          tracking_url: trackingUrl,
           status: 'success'
         })
 
@@ -160,7 +214,8 @@ serve(async (req) => {
         processed: results.length,
         errors: errors.length,
         results,
-        errors
+        errors,
+        message: `Successfully processed ${results.length} links with click tracking enabled`
       }),
       { 
         status: 200, 
