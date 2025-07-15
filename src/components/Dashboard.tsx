@@ -15,13 +15,18 @@ interface UTMLink {
   domain: string;
   full_url: string;
   short_url: string;
+  tracking_url: string;
   clicks: number;
   created_at: string;
 }
 
+interface UTMLinkWithEmail extends UTMLink {
+  user_email: string;
+}
+
 const Dashboard = () => {
   const { user, isAdmin } = useAuth();
-  const [links, setLinks] = useState<UTMLink[]>([]);
+  const [links, setLinks] = useState<UTMLinkWithEmail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -29,7 +34,6 @@ const Dashboard = () => {
 
   // Filter states
   const [filters, setFilters] = useState({
-    email: '',
     program: '',
     channel: '',
     dateFrom: '',
@@ -40,6 +44,36 @@ const Dashboard = () => {
 
   const pageSize = 50;
 
+  // Function to fetch user emails for given user IDs
+  const fetchUserEmails = async (userIds: string[]): Promise<{ [key: string]: string }> => {
+    try {
+      // Get unique user IDs
+      const uniqueUserIds = [...new Set(userIds)];
+      
+      // Fetch user data from Supabase Auth
+      const emailMap: { [key: string]: string } = {};
+      
+      for (const userId of uniqueUserIds) {
+        try {
+          const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
+          if (!userError && userData?.user?.email) {
+            emailMap[userId] = userData.user.email;
+          } else {
+            emailMap[userId] = 'Unknown';
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch email for user ${userId}:`, err);
+          emailMap[userId] = 'Unknown';
+        }
+      }
+      
+      return emailMap;
+    } catch (error) {
+      console.error('Error fetching user emails:', error);
+      return {};
+    }
+  };
+
   const loadLinks = async (page = 1) => {
     setLoading(true);
     setError('');
@@ -49,14 +83,12 @@ const Dashboard = () => {
         .from('utm_links')
         .select('*', { count: 'exact' });
 
-      // Apply user restriction for non-admin users - using user_id instead of email
+      // Apply user restriction for non-admin users
       if (!isAdmin && user?.id) {
         query = query.eq('user_id', user.id);
       }
 
-      // Apply filters - note: email filter won't work anymore since we removed the email column
-      // We'll need to join with auth.users if we want to filter by email, but that's not possible with RLS
-      // For now, we'll remove the email filter functionality
+      // Apply filters
       if (filters.program) {
         query = query.eq('program', filters.program);
       }
@@ -80,10 +112,23 @@ const Dashboard = () => {
 
       if (queryError) throw queryError;
 
-      setLinks(data || []);
+      const utmLinks = data || [];
+      
+      // Fetch user emails
+      const userIds = utmLinks.map(link => link.user_id);
+      const emailMap = await fetchUserEmails(userIds);
+      
+      // Combine links with email data
+      const linksWithEmails: UTMLinkWithEmail[] = utmLinks.map(link => ({
+        ...link,
+        user_email: emailMap[link.user_id] || 'Unknown'
+      }));
+
+      setLinks(linksWithEmails);
       setTotalPages(Math.ceil((count || 0) / pageSize));
       setCurrentPage(page);
     } catch (err) {
+      console.error('Error loading links:', err);
       setError(err instanceof Error ? err.message : 'Failed to load links');
     } finally {
       setLoading(false);
@@ -106,11 +151,11 @@ const Dashboard = () => {
   const exportToCSV = () => {
     if (!links.length) return;
 
-    const headers = ['User ID', 'Program', 'Channel', 'Source', 'Medium', 'Campaign', 'Code/Name', 'Domain', 'Full URL', 'Short Link', 'Clicks', 'Created At'];
+    const headers = ['Email', 'Program', 'Channel', 'Source', 'Medium', 'Campaign', 'Code/Name', 'Domain', 'Trackable URL', 'Full URL', 'Clicks', 'Created At'];
     const csvContent = [
       headers.join(','),
       ...links.map(link => [
-        link.user_id,
+        link.user_email,
         link.program,
         link.channel,
         link.utm_source,
@@ -118,8 +163,8 @@ const Dashboard = () => {
         link.utm_campaign,
         link.code || '',
         link.domain || '',
+        `"${link.tracking_url}"`,
         `"${link.full_url}"`,
-        link.short_url,
         link.clicks,
         new Date(link.created_at).toLocaleDateString()
       ].join(','))
@@ -230,7 +275,7 @@ const Dashboard = () => {
             <div className="mt-4 flex justify-end space-x-2">
               <button
                 onClick={() => {
-                  setFilters({ email: '', program: '', channel: '', dateFrom: '', dateTo: '' });
+                  setFilters({ program: '', channel: '', dateFrom: '', dateTo: '' });
                   setCurrentPage(1);
                   loadLinks(1);
                 }}
@@ -261,13 +306,13 @@ const Dashboard = () => {
         </div>
       ) : (
         <>
-          {/* Table - replace Email column with User ID */}
+          {/* Table */}
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Program</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Channel</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
@@ -275,7 +320,7 @@ const Dashboard = () => {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campaign</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code/Name</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Domain</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Short Link</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trackable URL</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Clicks</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
                   </tr>
@@ -283,7 +328,7 @@ const Dashboard = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {links.map((link) => (
                     <tr key={link.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-900 font-mono text-xs">{link.user_id}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{link.user_email}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{link.program}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{link.channel}</td>
                       <td className="px-4 py-3 text-sm text-gray-900 font-mono">{link.utm_source}</td>
@@ -293,17 +338,20 @@ const Dashboard = () => {
                       <td className="px-4 py-3 text-sm text-gray-900">{link.domain || '-'}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         <a
-                          href={link.short_url}
+                          href={link.tracking_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:text-blue-800 inline-flex items-center"
+                          title="This is the trackable URL that counts clicks"
                         >
-                          {link.short_url.replace('https://', '')}
+                          {link.tracking_url.replace('https://msrfiyovfhgyzeivrtlr.supabase.co/functions/v1/track-click?id=', 'track/')}
                           <ExternalLink className="w-3 h-3 ml-1" />
                         </a>
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          link.clicks > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                        }`}>
                           {link.clicks}
                         </span>
                       </td>

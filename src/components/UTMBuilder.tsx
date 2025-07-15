@@ -21,7 +21,6 @@ const UTMBuilder = () => {
   const [result, setResult] = useState<{
     fullUrl: string;
     shortUrl: string;
-    trackingUrl: string;
   } | null>(null);
 
   const [copiedField, setCopiedField] = useState<string>('');
@@ -229,7 +228,7 @@ const UTMBuilder = () => {
       const shortUrl = await generateShortUrl(fullUrl, formData.domain || undefined);
       console.log('Short URL generated:', shortUrl);
 
-      // Save to database - using user.id instead of user.email
+      // Save to database
       console.log('Saving to database...');
       const { data: linkData, error: dbError } = await supabase
         .from('utm_links')
@@ -264,8 +263,8 @@ const UTMBuilder = () => {
 
       console.log('Database save successful, ID:', linkData.id);
 
-      // Generate tracking URL with the correct Supabase function URL format
-      const trackingUrl = `https://msrfiyovfhgyzeivrtlr.supabase.co/functions/v1/track-click?id=${linkData.id}&url=${encodeURIComponent(shortUrl)}`;
+      // Generate the tracking URL that will redirect to the full URL and count clicks
+      const trackingUrl = `https://msrfiyovfhgyzeivrtlr.supabase.co/functions/v1/track-click?id=${linkData.id}`;
       console.log('Tracking URL generated:', trackingUrl);
 
       // Update the record with the tracking URL
@@ -281,15 +280,15 @@ const UTMBuilder = () => {
       }
 
       console.log('Process completed successfully');
+      // Show the tracking URL as the "Short URL" since that's what users should share
       setResult({
         fullUrl,
-        shortUrl,
-        trackingUrl
+        shortUrl: trackingUrl
       });
 
       toast({
         title: "UTM Links Generated",
-        description: "Your UTM links have been generated successfully!",
+        description: "Your trackable short URL has been generated successfully!",
       });
 
     } catch (error) {
@@ -496,41 +495,15 @@ const UTMBuilder = () => {
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-green-700 mb-2">Full URL:</label>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="text"
-                    value={result.fullUrl}
-                    readOnly
-                    className="flex-1 px-3 py-2 bg-white border border-green-300 rounded text-sm"
-                  />
-                  <button
-                    onClick={() => copyToClipboard(result.fullUrl, 'full')}
-                    className="p-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-                    title="Copy to clipboard"
-                  >
-                    {copiedField === 'full' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  </button>
-                  <a
-                    href={result.fullUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-                    title="Open link"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-green-700 mb-2">Short URL:</label>
+                <label className="block text-sm font-medium text-green-700 mb-2">
+                  📊 Trackable Short URL (Share this link - it will count clicks):
+                </label>
                 <div className="flex items-center space-x-2">
                   <input
                     type="text"
                     value={result.shortUrl}
                     readOnly
-                    className="flex-1 px-3 py-2 bg-white border border-green-300 rounded text-sm"
+                    className="flex-1 px-3 py-2 bg-white border border-green-300 rounded text-sm font-mono"
                   />
                   <button
                     onClick={() => copyToClipboard(result.shortUrl, 'short')}
@@ -544,31 +517,49 @@ const UTMBuilder = () => {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-                    title="Open link"
+                    title="Test link (will count as a click)"
                   >
                     <ExternalLink className="w-4 h-4" />
                   </a>
                 </div>
+                <p className="text-xs text-green-600 mt-1">
+                  ✨ This URL automatically tracks clicks and redirects to your landing page with UTM parameters
+                </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-green-700 mb-2">Tracking URL:</label>
+                <label className="block text-sm font-medium text-green-700 mb-2">
+                  🔗 Full URL (for reference):
+                </label>
                 <div className="flex items-center space-x-2">
                   <input
                     type="text"
-                    value={result.trackingUrl}
+                    value={result.fullUrl}
                     readOnly
-                    className="flex-1 px-3 py-2 bg-white border border-green-300 rounded text-sm"
+                    className="flex-1 px-3 py-2 bg-gray-50 border border-green-300 rounded text-sm text-gray-600"
                   />
                   <button
-                    onClick={() => copyToClipboard(result.trackingUrl, 'tracking')}
-                    className="p-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-                    title="Copy to clipboard"
+                    onClick={() => copyToClipboard(result.fullUrl, 'full')}
+                    className="p-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
+                    title="Copy full URL"
                   >
-                    {copiedField === 'tracking' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    {copiedField === 'full' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   </button>
                 </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  This is the final destination URL with UTM parameters
+                </p>
               </div>
+            </div>
+
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+              <h4 className="font-medium text-blue-900 mb-1">📈 How to use:</h4>
+              <ul className="text-sm text-blue-700 space-y-1">
+                <li>• Share the <strong>Trackable Short URL</strong> with your audience</li>
+                <li>• Every click will be automatically counted in your dashboard</li>
+                <li>• Users will be redirected to your landing page with UTM parameters</li>
+                <li>• UTM parameters will be tracked in your analytics (Google Analytics, etc.)</li>
+              </ul>
             </div>
           </div>
         )}

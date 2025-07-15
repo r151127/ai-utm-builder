@@ -16,10 +16,12 @@ serve(async (req) => {
   try {
     const url = new URL(req.url)
     const id = url.searchParams.get('id')
-    const redirectUrl = url.searchParams.get('url')
+    
+    console.log('Track-click called with ID:', id)
 
-    if (!id || !redirectUrl) {
-      return new Response('Missing required parameters', { 
+    if (!id) {
+      console.error('Missing ID parameter')
+      return new Response('Missing required ID parameter', { 
         status: 400,
         headers: corsHeaders 
       })
@@ -30,45 +32,62 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
+    // First, get the UTM link record to get the full URL
+    console.log('Fetching UTM link record for ID:', id)
+    const { data: linkData, error: fetchError } = await supabase
+      .from('utm_links')
+      .select('full_url, clicks')
+      .eq('id', id)
+      .single()
+
+    if (fetchError) {
+      console.error('Error fetching link data:', fetchError)
+      return new Response('Link not found', { 
+        status: 404,
+        headers: corsHeaders 
+      })
+    }
+
+    if (!linkData) {
+      console.error('No link data found for ID:', id)
+      return new Response('Link not found', { 
+        status: 404,
+        headers: corsHeaders 
+      })
+    }
+
+    console.log('Found link with current clicks:', linkData.clicks)
+    console.log('Full URL to redirect to:', linkData.full_url)
+
     // Increment click count
-    const { error } = await supabase
+    console.log('Incrementing click count...')
+    const { error: updateError } = await supabase
       .from('utm_links')
       .update({ 
-        clicks: supabase.sql`clicks + 1`
+        clicks: (linkData.clicks || 0) + 1
       })
       .eq('id', id)
 
-    if (error) {
-      console.error('Database error:', error)
+    if (updateError) {
+      console.error('Database error while updating clicks:', updateError)
       // Still redirect even if database update fails
+    } else {
+      console.log('Successfully incremented clicks to:', (linkData.clicks || 0) + 1)
     }
 
-    // Redirect to the original URL
+    // Redirect to the full URL (with UTM parameters)
+    console.log('Redirecting to full URL:', linkData.full_url)
     return new Response(null, {
       status: 302,
       headers: {
         ...corsHeaders,
-        'Location': decodeURIComponent(redirectUrl)
+        'Location': linkData.full_url
       }
     })
 
   } catch (error) {
     console.error('Error in track-click function:', error)
     
-    // Try to redirect anyway if we have the URL
-    const url = new URL(req.url)
-    const redirectUrl = url.searchParams.get('url')
-    
-    if (redirectUrl) {
-      return new Response(null, {
-        status: 302,
-        headers: {
-          ...corsHeaders,
-          'Location': decodeURIComponent(redirectUrl)
-        }
-      })
-    }
-
     return new Response('Internal server error', { 
       status: 500,
       headers: corsHeaders 
