@@ -19,7 +19,7 @@ interface BulkUTMData {
   utm_medium: string;
   utm_campaign: string;
   full_url: string;
-  short_url: string;
+  short_url: string; // This should be the TinyURL
 }
 
 serve(async (req) => {
@@ -72,10 +72,10 @@ serve(async (req) => {
           continue
         }
 
-        // Generate tracking URL with click tracking (simplified format like individual links)
+        // Generate tracking URL that bulk imports will use for click tracking
         const trackingUrl = `${supabaseUrl}/functions/v1/track-click?id={{ID}}`
 
-        // Prepare data for insertion
+        // Prepare data for insertion - short_url is the TinyURL from the sheet
         const insertData = {
           email: linkData.email,
           program: linkData.program,
@@ -88,13 +88,21 @@ serve(async (req) => {
           utm_medium: linkData.utm_medium,
           utm_campaign: linkData.utm_campaign,
           full_url: linkData.full_url,
-          short_url: linkData.short_url,
-          tracking_url: trackingUrl,
+          short_url: linkData.short_url, // TinyURL from the sheet
+          tracking_url: trackingUrl, // Our tracking endpoint
           clicks: 0,
           source: 'bulk',
           user_id: null, // Bulk imports don't have user accounts
           created_at: new Date().toISOString()
         }
+
+        console.log('Inserting bulk link data:', {
+          email: insertData.email,
+          program: insertData.program,
+          channel: insertData.channel,
+          short_url: insertData.short_url,
+          full_url: insertData.full_url
+        })
 
         // Insert into database
         const { data, error } = await supabase
@@ -120,9 +128,17 @@ serve(async (req) => {
           .update({ tracking_url: actualTrackingUrl })
           .eq('id', data.id)
 
+        console.log('Successfully inserted bulk link:', {
+          id: data.id,
+          email: linkData.email,
+          short_url: linkData.short_url,
+          tracking_url: actualTrackingUrl
+        })
+
         results.push({
           email: linkData.email,
           id: data.id,
+          short_url: linkData.short_url, // Return the TinyURL
           tracking_url: actualTrackingUrl,
           status: 'success'
         })
@@ -135,6 +151,8 @@ serve(async (req) => {
         })
       }
     }
+
+    console.log(`Bulk import completed: ${results.length} successful, ${errors.length} errors`)
 
     return new Response(
       JSON.stringify({

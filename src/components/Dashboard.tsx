@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
 import { Download, Search, Filter, ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Users, Globe } from 'lucide-react';
@@ -39,7 +39,7 @@ const Dashboard = () => {
   const [filters, setFilters] = useState({
     program: '',
     channel: '',
-    source: '', // Add source filter
+    source: '',
     dateFrom: '',
     dateTo: ''
   });
@@ -49,7 +49,7 @@ const Dashboard = () => {
   const pageSize = 50;
 
   // Function to fetch user emails using the existing edge function
-  const fetchUserEmails = async (userIds: string[]): Promise<{ [key: string]: string }> => {
+  const fetchUserEmails = useCallback(async (userIds: string[]): Promise<{ [key: string]: string }> => {
     try {
       console.log('Fetching user emails via edge function for:', userIds);
       
@@ -69,9 +69,13 @@ const Dashboard = () => {
       console.error('Error fetching user emails:', error);
       return {};
     }
-  };
+  }, []);
 
-  const loadLinks = async (page = 1) => {
+  const loadLinks = useCallback(async (page = 1) => {
+    if (loading && page === currentPage) {
+      return; // Prevent multiple simultaneous requests
+    }
+    
     setLoading(true);
     setError('');
 
@@ -110,7 +114,10 @@ const Dashboard = () => {
         .order('created_at', { ascending: false })
         .range(from, to);
 
-      if (queryError) throw queryError;
+      if (queryError) {
+        console.error('Query error:', queryError);
+        throw queryError;
+      }
 
       const utmLinks = data || [];
       
@@ -139,25 +146,28 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAdmin, user?.id, filters, fetchUserEmails, loading, currentPage]);
 
+  // Initial load - only depend on auth state, not filters
   useEffect(() => {
-    loadLinks();
-  }, [isAdmin, user]);
+    if (user !== undefined) { // Wait for auth to be determined
+      loadLinks(1);
+    }
+  }, [isAdmin, user?.id]); // Remove filters and loadLinks from dependencies
 
-  const handleFilter = () => {
+  const handleFilter = useCallback(() => {
     setCurrentPage(1);
     loadLinks(1);
-  };
+  }, [loadLinks]);
 
-  const handlePageChange = (page: number) => {
+  const handlePageChange = useCallback((page: number) => {
     loadLinks(page);
-  };
+  }, [loadLinks]);
 
-  const exportToCSV = () => {
+  const exportToCSV = useCallback(() => {
     if (!links.length) return;
 
-    const headers = ['Email', 'Source', 'Program', 'Channel', 'UTM Source', 'UTM Medium', 'UTM Campaign', 'Code/Name', 'Domain', 'Trackable URL', 'Full URL', 'Clicks', 'Created At'];
+    const headers = ['Email', 'Source', 'Program', 'Channel', 'UTM Source', 'UTM Medium', 'UTM Campaign', 'Code/Name', 'Domain', 'TinyURL/Short URL', 'Tracking URL', 'Full URL', 'Clicks', 'Created At'];
     const csvContent = [
       headers.join(','),
       ...links.map(link => [
@@ -170,6 +180,7 @@ const Dashboard = () => {
         link.utm_campaign,
         link.code || '',
         link.domain || '',
+        `"${link.short_url}"`,
         `"${link.tracking_url}"`,
         `"${link.full_url}"`,
         link.clicks,
@@ -184,9 +195,9 @@ const Dashboard = () => {
     a.download = `utm-links-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-  };
+  }, [links]);
 
-  const formatDate = (dateString: string) => {
+  const formatDate = useCallback((dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -194,18 +205,21 @@ const Dashboard = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
-  };
+  }, []);
 
-  const getSourceIcon = (source: string) => {
+  const getSourceIcon = useCallback((source: string) => {
     return source === 'bulk' ? <Globe className="w-4 h-4 text-blue-600" /> : <Users className="w-4 h-4 text-green-600" />;
-  };
+  }, []);
 
-  // Helper function to get the clickable URL for a link
-  const getClickableUrl = (link: UTMLinkWithEmail) => {
-    // For individual links, use tracking_url (which is the same as short_url)
-    // For bulk links, use tracking_url to ensure clicks are tracked
-    return link.tracking_url;
-  };
+  // Helper function to get the clickable URL for a link - Always use TinyURL (short_url)
+  const getClickableUrl = useCallback((link: UTMLinkWithEmail) => {
+    // Always use short_url (TinyURL) for both individual and bulk links
+    return link.short_url;
+  }, []);
+
+  const refreshData = useCallback(() => {
+    loadLinks(currentPage);
+  }, [loadLinks, currentPage]);
 
   return (
     <div className="max-w-7xl mx-auto p-6">
@@ -221,15 +235,16 @@ const Dashboard = () => {
               Filters
             </button>
             <button
-              onClick={() => loadLinks(currentPage)}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              onClick={refreshData}
+              disabled={loading}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
             >
-              <RefreshCw className="w-4 h-4 mr-2" />
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
             <button
               onClick={exportToCSV}
-              disabled={!links.length}
+              disabled={!links.length || loading}
               className="utm-button disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download className="w-4 h-4 mr-2" />
@@ -351,7 +366,7 @@ const Dashboard = () => {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UTM Campaign</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code/Name</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Domain</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trackable URL</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">TinyURL</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Clicks</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
                   </tr>
@@ -381,7 +396,7 @@ const Dashboard = () => {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:text-blue-800 inline-flex items-center"
-                          title={`Click to track and redirect. URL: ${getClickableUrl(link)}`}
+                          title={`TinyURL that tracks clicks: ${getClickableUrl(link)}`}
                         >
                           {getClickableUrl(link).length > 50 ? `${getClickableUrl(link).substring(0, 50)}...` : getClickableUrl(link)}
                           <ExternalLink className="w-3 h-3 ml-1" />
@@ -411,7 +426,7 @@ const Dashboard = () => {
               <div className="flex space-x-2">
                 <button
                   onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage <= 1}
+                  disabled={currentPage <= 1 || loading}
                   className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   <ChevronLeft className="w-4 h-4 mr-1" />
@@ -419,7 +434,7 @@ const Dashboard = () => {
                 </button>
                 <button
                   onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage >= totalPages}
+                  disabled={currentPage >= totalPages || loading}
                   className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Next
