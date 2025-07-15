@@ -22,6 +22,17 @@ interface BulkUTMData {
   short_url?: string; // This is optional now since we'll create it
 }
 
+// Function to extract domain from URL
+function extractDomainFromUrl(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch (error) {
+    console.error('Error extracting domain from URL:', url, error);
+    return '';
+  }
+}
+
 // Function to create TinyURL that points to our tracking endpoint
 async function createTrackingTinyURL(trackingUrl: string): Promise<string> {
   const tinyUrlToken = Deno.env.get('TINYURL_API_TOKEN');
@@ -106,6 +117,9 @@ serve(async (req) => {
           continue
         }
 
+        // Extract domain from full_url instead of using the provided domain
+        const extractedDomain = extractDomainFromUrl(linkData.full_url);
+
         // First, insert the record to get an ID
         const insertData = {
           email: linkData.email,
@@ -114,7 +128,7 @@ serve(async (req) => {
           platform: linkData.platform,
           placement: linkData.placement,
           code: linkData.code || null,
-          domain: linkData.domain || null,
+          domain: extractedDomain, // Use extracted domain instead of linkData.domain
           utm_source: linkData.utm_source,
           utm_medium: linkData.utm_medium,
           utm_campaign: linkData.utm_campaign,
@@ -131,7 +145,8 @@ serve(async (req) => {
           email: insertData.email,
           program: insertData.program,
           channel: insertData.channel,
-          full_url: insertData.full_url
+          full_url: insertData.full_url,
+          extracted_domain: extractedDomain
         })
 
         // Insert into database to get the ID
@@ -160,6 +175,7 @@ serve(async (req) => {
           id: data.id,
           trackingUrl,
           tinyUrl,
+          extractedDomain,
           finalDestination: linkData.full_url
         })
 
@@ -186,6 +202,7 @@ serve(async (req) => {
           email: linkData.email,
           short_url: tinyUrl,
           tracking_url: trackingUrl,
+          domain: extractedDomain,
           clicks_through: `${tinyUrl} → ${trackingUrl} → ${linkData.full_url}`
         })
 
@@ -194,6 +211,7 @@ serve(async (req) => {
           id: data.id,
           short_url: tinyUrl,
           tracking_url: trackingUrl,
+          domain: extractedDomain,
           status: 'success'
         })
 
@@ -215,7 +233,7 @@ serve(async (req) => {
         errors: errors.length,
         results,
         errors,
-        message: `Successfully processed ${results.length} links with click tracking enabled`
+        message: `Successfully processed ${results.length} links with click tracking enabled and proper domain extraction`
       }),
       { 
         status: 200, 

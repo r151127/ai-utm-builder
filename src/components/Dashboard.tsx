@@ -5,11 +5,19 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Upload, Copy, ExternalLink, RefreshCw, Download } from 'lucide-react';
+import { Upload, Copy, ExternalLink, RefreshCw, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from '@/integrations/supabase/client';
 import { Tables } from '@/integrations/supabase/types';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 interface UTMAnalytics extends Tables<'utm_links'> {}
 
@@ -20,42 +28,72 @@ const Dashboard = () => {
   const [filterPlatform, setFilterPlatform] = useState('all');
   const [filterSource, setFilterSource] = useState('all');
   const [showBulkImport, setShowBulkImport] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const itemsPerPage = 20;
   const { toast } = useToast();
   const [utmAnalytics, setUtmAnalytics] = useState<UTMAnalytics[]>([]);
 
+  // Calculate pagination range
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage - 1;
+  const totalPages = Math.ceil(totalCount / itemsPerPage);
+
   const { data: utmLinksData, error, isLoading, refetch } = useQuery({
-    queryKey: ['utmLinks', searchTerm, filterProgram, filterChannel, filterPlatform, filterSource],
+    queryKey: ['utmLinks', searchTerm, filterProgram, filterChannel, filterPlatform, filterSource, currentPage],
     queryFn: async () => {
-      let query = supabase
+      // First, get the total count
+      let countQuery = supabase
         .from('utm_links')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('*', { count: 'exact', head: true });
 
       if (searchTerm) {
-        query = query.ilike('full_url', `%${searchTerm}%`);
+        countQuery = countQuery.ilike('short_url', `%${searchTerm}%`);
       }
-
       if (filterProgram !== 'all') {
-        query = query.eq('program', filterProgram);
+        countQuery = countQuery.eq('program', filterProgram);
       }
-
       if (filterChannel !== 'all') {
-        query = query.eq('channel', filterChannel);
+        countQuery = countQuery.eq('channel', filterChannel);
       }
-
       if (filterPlatform !== 'all') {
-        query = query.eq('platform', filterPlatform);
+        countQuery = countQuery.eq('platform', filterPlatform);
       }
-
       if (filterSource !== 'all') {
-        query = query.eq('source', filterSource);
+        countQuery = countQuery.eq('source', filterSource);
       }
 
-      const { data, error } = await query;
-      if (error) {
-        console.error("Error fetching UTM links:", error);
-        throw error;
+      const { count, error: countError } = await countQuery;
+      if (countError) throw countError;
+
+      setTotalCount(count || 0);
+
+      // Then get the paginated data
+      let dataQuery = supabase
+        .from('utm_links')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(startIndex, endIndex);
+
+      if (searchTerm) {
+        dataQuery = dataQuery.ilike('short_url', `%${searchTerm}%`);
       }
+      if (filterProgram !== 'all') {
+        dataQuery = dataQuery.eq('program', filterProgram);
+      }
+      if (filterChannel !== 'all') {
+        dataQuery = dataQuery.eq('channel', filterChannel);
+      }
+      if (filterPlatform !== 'all') {
+        dataQuery = dataQuery.eq('platform', filterPlatform);
+      }
+      if (filterSource !== 'all') {
+        dataQuery = dataQuery.eq('source', filterSource);
+      }
+
+      const { data, error: dataError } = await dataQuery;
+      if (dataError) throw dataError;
+
       return data;
     },
   });
@@ -65,6 +103,11 @@ const Dashboard = () => {
       setUtmAnalytics(utmLinksData);
     }
   }, [utmLinksData]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterProgram, filterChannel, filterPlatform, filterSource]);
 
   if (error) {
     toast({
@@ -103,7 +146,7 @@ const Dashboard = () => {
     const headers = [
       'Created At', 'Source', 'Short URL', 'Clicks', 'Program', 'Channel', 
       'Platform', 'Placement', 'Email', 'UTM Source', 'UTM Medium', 'UTM Campaign',
-      'CBA', 'Code', 'Domain', 'Full URL'
+      'CBA', 'Code', 'Domain'
     ];
 
     const csvContent = [
@@ -123,8 +166,7 @@ const Dashboard = () => {
         `"${link.utm_campaign}"`,
         `"${link.cba || ''}"`,
         `"${link.code || ''}"`,
-        `"${link.domain || ''}"`,
-        `"${link.full_url}"`
+        `"${link.domain || ''}"`
       ].join(','))
     ].join('\n');
 
@@ -170,6 +212,13 @@ const Dashboard = () => {
       default: return 'bg-gray-100 text-gray-800';
     }
   };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  const currentRangeStart = startIndex + 1;
+  const currentRangeEnd = Math.min(endIndex + 1, totalCount);
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -271,6 +320,15 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Results count */}
+        <div className="mb-4 text-sm text-gray-600">
+          {totalCount > 0 ? (
+            <>Showing {currentRangeStart}-{currentRangeEnd} of {totalCount} links</>
+          ) : (
+            'No links found'
+          )}
+        </div>
+
         {isLoading ? (
           <div className="text-center py-8">
             <div className="inline-flex items-center">
@@ -300,7 +358,6 @@ const Dashboard = () => {
                   <TableHead className="w-[80px]">CBA</TableHead>
                   <TableHead className="w-[80px]">Code</TableHead>
                   <TableHead className="w-[100px]">Domain</TableHead>
-                  <TableHead className="w-[200px]">Full URL</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -365,20 +422,67 @@ const Dashboard = () => {
                     <TableCell className="text-sm">{link.cba || '-'}</TableCell>
                     <TableCell className="text-sm">{link.code || '-'}</TableCell>
                     <TableCell className="text-sm">{link.domain || '-'}</TableCell>
-                    <TableCell>
-                      <a 
-                        href={link.full_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                      >
-                        {link.full_url.length > 40 ? link.full_url.substring(0, 40) + "..." : link.full_url}
-                      </a>
-                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="mt-6 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="flex items-center gap-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+                      
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={currentPage === pageNum ? "default" : "outline"}
+                          onClick={() => handlePageChange(pageNum)}
+                          className="w-10 h-10"
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    })}
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="flex items-center gap-2"
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+                
+                <div className="text-sm text-gray-600">
+                  Page {currentPage} of {totalPages}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
