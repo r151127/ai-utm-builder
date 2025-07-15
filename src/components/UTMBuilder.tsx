@@ -27,17 +27,22 @@ const UTMBuilder = () => {
   const [copiedField, setCopiedField] = useState<string>('');
   const [error, setError] = useState('');
 
-  // Configuration data with real values from knowledge base
+  // Configuration data with updated channel shortcuts per user requirements
   const programs = ['Academy', 'Intensive', 'NIAT'];
-  const channels = ['Affiliate', 'Digital Marketing', 'Influencer Marketing', 'Employee Referral', 'Invite & Earn', 'NET'];
+  const channels = ['Influencer Marketing', 'Digital Marketing', 'Affiliate', 'Digital Affiliate', 'College Dosth', 'Employee Referral', 'Invite & Earn', 'Brand Search', 'SEO', 'NET'];
   const platforms = ['YouTube', 'Instagram', 'Facebook', 'LinkedIn', 'Google', 'Meta', 'WhatsApp', 'Telegram', 'Email', 'Offline Poster'];
 
+  // Updated channel shortcuts as per user requirements
   const channelKeys: { [key: string]: string } = {
-    'Affiliate': 'aff',
-    'Digital Marketing': 'digmkt',
     'Influencer Marketing': 'ifmkt',
+    'Digital Marketing': 'digitalads',
+    'Affiliate': 'affiliate',
+    'Digital Affiliate': 'digitalaffiliate',
+    'College Dosth': 'collegedosth',
     'Employee Referral': 'empref',
     'Invite & Earn': 'invite',
+    'Brand Search': 'brandsearch',
+    'SEO': 'seo',
     'NET': 'net'
   };
 
@@ -68,7 +73,7 @@ const UTMBuilder = () => {
     'Offline Poster': ['Poster Copy']
   };
 
-  // Real landing page URLs from knowledge base
+  // Updated landing page URLs with expanded channel support
   const landingPages: { [key: string]: { [key: string]: string[] } } = {
     'Academy': {
       'Affiliate': ['https://accounts.ccbp.in/register/webinar-iitians-ccbp-4.0-academy-affiliate'],
@@ -76,21 +81,32 @@ const UTMBuilder = () => {
       'Influencer Marketing': ['https://accounts.ccbp.in/register/webinar-iitians-ccbp-4.0-academy-social-media'],
       'Employee Referral': ['https://accounts.ccbp.in/register/webinar-iitians-ccbp-4.0-academy-inbound'],
       'Invite & Earn': ['https://accounts.ccbp.in/register/academy-invite-and-earn'],
-      'AI Workshop': ['https://accounts.ccbp.in/register/ai-workshop', 'https://www.ccbp.in/ai-workshop']
+      'Digital Affiliate': ['https://accounts.ccbp.in/register/webinar-iitians-ccbp-4.0-academy-affiliate'],
+      'College Dosth': ['https://www.ccbp.in/academy/start-from-college'],
+      'Brand Search': ['https://www.ccbp.in/blueprint-softwarecareer'],
+      'SEO': ['https://www.ccbp.in/blueprint-softwarecareer']
     },
     'Intensive': {
       'Affiliate': ['https://accounts.ccbp.in/register/ccbp-affiliate'],
       'Digital Marketing': ['https://nxtwave.ccbp.in/intensive-english'],
       'Influencer Marketing': ['https://www.fullstackdevelopercourse.co.in/nxtwave-intensive-demo', 'https://www.ccbp.in/intensive-new-v2', 'https://www.fullstackdevelopercourse.co.in/intensive-portal-experience', 'https://www.ccbp.in/intensive/instant-query-resolution', 'https://www.ccbp.in/intensive'],
       'Employee Referral': ['https://ccbp.in/intensive/referral'],
-      'NET': ['https://www.ccbp.in/net']
+      'NET': ['https://www.ccbp.in/net'],
+      'Digital Affiliate': ['https://accounts.ccbp.in/register/ccbp-affiliate'],
+      'College Dosth': ['https://www.ccbp.in/intensive'],
+      'Brand Search': ['https://www.ccbp.in/intensive'],
+      'SEO': ['https://www.ccbp.in/intensive']
     },
     'NIAT': {
       'Affiliate': ['https://apply.niatindia.com/login'],
       'Digital Marketing': ['https://apply.niatindia.com/login', 'https://www.niatindia.com/landing-page-dm'],
       'Influencer Marketing': ['https://apply.niatindia.com/login'],
       'Employee Referral': ['https://apply.niatindia.com/login', 'https://accounts.ccbp.in/register/niat-employee-referral'],
-      'Invite & Earn': ['https://accounts.ccbp.in/public/register/niat-boot-camp', 'https://nxtrewards.ccbp.in']
+      'Invite & Earn': ['https://accounts.ccbp.in/public/register/niat-boot-camp', 'https://nxtrewards.ccbp.in'],
+      'Digital Affiliate': ['https://apply.niatindia.com/login'],
+      'College Dosth': ['https://apply.niatindia.com/login'],
+      'Brand Search': ['https://apply.niatindia.com/login'],
+      'SEO': ['https://apply.niatindia.com/login']
     }
   };
 
