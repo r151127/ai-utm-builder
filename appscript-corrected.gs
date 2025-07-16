@@ -126,18 +126,7 @@ function processBulkRows(startRow, endRow) {
         channel, program, placement, landingPageUrl, code
       );
 
-      // Create temporary tracking URL for TinyURL (will be updated later)
-      const tempTrackingUrl = "https://msrfiyovfhgyzeivrtlr.supabase.co/functions/v1/track-click?id=temp";
-
-      // Create short link pointing to tracking URL
-      const short_link = createShortLink(tempTrackingUrl, domain);
-      
-      if (!short_link) {
-        sheet.getRange(startRow + i, 11).setValue("❌ Short link creation failed");
-        continue;
-      }
-
-      // Prepare data for Supabase
+      // Prepare data for Supabase (first save to get tracking URL)
       const linkData = {
         email: email,
         program: program,
@@ -150,30 +139,48 @@ function processBulkRows(startRow, endRow) {
         utm_medium: utm_medium,
         utm_campaign: utm_campaign,
         full_url: utm_link,
-        short_url: short_link
+        short_url: "temp" // Will be updated after TinyURL creation
       };
 
-      // Save to Supabase and get the response
+      console.log(`Row ${startRow + i}: Saving to database first to get tracking URL...`);
+      
+      // Save to Supabase to get the tracking URL
       const saveResponse = saveToSupabase([linkData]);
       
-      if (saveResponse && saveResponse.success && saveResponse.results && saveResponse.results.length > 0) {
-        const result = saveResponse.results[0];
-        const actualTrackingUrl = result.tracking_url;
-        
-        // Update the TinyURL to point to the actual tracking URL
-        const finalShortUrl = updateTinyUrlTarget(short_link, actualTrackingUrl);
-        
-        // Update spreadsheet with success
-        updateSpreadsheet(sheet, startRow + i, utm_link, finalShortUrl || short_link);
-        
-        console.log(`Row ${startRow + i}: Successfully processed`);
-      } else {
+      if (!saveResponse || !saveResponse.success || !saveResponse.results || saveResponse.results.length === 0) {
         throw new Error("Database save failed: " + (saveResponse.errors ? JSON.stringify(saveResponse.errors) : "Unknown error"));
       }
 
+      const result = saveResponse.results[0];
+      const trackingUrl = result.tracking_url;
+      
+      console.log(`Row ${startRow + i}: Got tracking URL: ${trackingUrl}`);
+
+      // Now create TinyURL pointing to the tracking URL with the original alias
+      const customAlias = domain ? domain.replace(/^https?:\/\//, '').replace(/\//g, '') : '';
+      const shortUrl = createShortLink(trackingUrl, customAlias);
+      
+      if (!shortUrl) {
+        throw new Error("TinyURL creation failed");
+      }
+
+      console.log(`Row ${startRow + i}: Created TinyURL: ${shortUrl}`);
+
+      // Update the database record with the actual short URL
+      const updateResponse = updateSupabaseRecord(result.id, shortUrl);
+      
+      if (!updateResponse || !updateResponse.success) {
+        console.warn(`Row ${startRow + i}: Failed to update short URL in database, but continuing...`);
+      }
+
+      // Update spreadsheet with success
+      updateSpreadsheet(sheet, startRow + i, utm_link, shortUrl);
+      
+      console.log(`Row ${startRow + i}: Successfully processed`);
+
     } catch (error) {
       console.error(`Row ${startRow + i} error:`, error);
-      sheet.getRange(startRow + i, 11).setValue("❌ Database save error");
+      sheet.getRange(startRow + i, 11).setValue("❌ " + error.message);
     }
     
     // Rate limit delay
@@ -280,46 +287,6 @@ function createShortLink(longUrl, customAlias) {
   return "";
 }
 
-function updateTinyUrlTarget(tinyUrl, newTargetUrl) {
-  // Note: TinyURL doesn't support updating existing URLs
-  // So we'll create a new one with the correct target
-  try {
-    // Extract alias from existing TinyURL
-    const urlParts = tinyUrl.split('/');
-    const alias = urlParts[urlParts.length - 1];
-    
-    // Create new TinyURL with updated suffix to make it unique
-    const newAlias = alias + "-trk";
-    
-    const url = "https://api.tinyurl.com/create";
-    const options = {
-      method: "post",
-      headers: {
-        "Authorization": "Bearer " + TINYURL_API_KEY,
-        "Content-Type": "application/json"
-      },
-      payload: JSON.stringify({
-        "url": newTargetUrl,
-        "domain": "tinyurl.com",
-        "alias": newAlias
-      }),
-      muteHttpExceptions: true
-    };
-    
-    const response = UrlFetchApp.fetch(url, options);
-    const result = JSON.parse(response.getContentText());
-    
-    if (result.data?.tiny_url) {
-      return result.data.tiny_url;
-    }
-  } catch (e) {
-    console.error("TinyURL update error:", e);
-  }
-  
-  // Return original if update fails
-  return tinyUrl;
-}
-
 function saveToSupabase(linksArray) {
   try {
     const url = "https://msrfiyovfhgyzeivrtlr.supabase.co/functions/v1/import-bulk-utm-links";
@@ -347,6 +314,38 @@ function saveToSupabase(linksArray) {
   } catch (error) {
     console.error("Supabase save error:", error);
     throw error;
+  }
+}
+
+function updateSupabaseRecord(linkId, shortUrl) {
+  try {
+    const url = `https://msrfiyovfhgyzeivrtlr.supabase.co/rest/v1/utm_links?id=eq.${linkId}`;
+    
+    const options = {
+      method: "PATCH",
+      headers: {
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zcmZpeW92ZmhneXplaXZydGxyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MjEyNTU5OSwiZXhwIjoyMDY3NzAxNTk5fQ.e03QSD2bFS0vG0UP2r3Kgn4HjiF1F3uqDKxCyGiQxNA",
+        "Content-Type": "application/json",
+        "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zcmZpeW92ZmhneXplaXZydGxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMjU1OTksImV4cCI6MjA2NzcwMTU5OX0.33r7uOriWmhBowdeTDG7Sgewj2-0Y_vJByUtxirkyoM"
+      },
+      payload: JSON.stringify({ short_url: shortUrl }),
+      muteHttpExceptions: true
+    };
+    
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+    
+    console.log(`Update response code: ${responseCode}`);
+    
+    if (responseCode === 200 || responseCode === 204) {
+      return { success: true };
+    } else {
+      console.error(`Update failed with code ${responseCode}: ${response.getContentText()}`);
+      return { success: false, error: response.getContentText() };
+    }
+  } catch (error) {
+    console.error("Supabase update error:", error);
+    return { success: false, error: error.message };
   }
 }
 
