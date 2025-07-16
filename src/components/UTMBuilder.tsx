@@ -110,6 +110,16 @@ const UTMBuilder = () => {
     }
   };
 
+  // Function to generate random alias for Digital Marketing
+  const generateRandomAlias = () => {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < 8; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
+
   const handlePlatformChange = (platform: string) => {
     setFormData({ 
       ...formData, 
@@ -119,11 +129,20 @@ const UTMBuilder = () => {
   };
 
   const handleProgramChannelChange = (field: string, value: string) => {
-    setFormData({ 
+    const updatedData = { 
       ...formData, 
       [field]: value,
       landingPage: '' // Reset landing page when program or channel changes
-    });
+    };
+
+    // Auto-generate random alias for Digital Marketing
+    if (field === 'channel' && value === 'Digital Marketing') {
+      updatedData.domain = generateRandomAlias();
+    } else if (field === 'channel' && value !== 'Digital Marketing') {
+      updatedData.domain = ''; // Clear domain for non-Digital Marketing channels
+    }
+
+    setFormData(updatedData);
   };
 
   const generateUTMParams = () => {
@@ -242,6 +261,9 @@ const UTMBuilder = () => {
       const fullUrl = `${baseUrl}?${urlParams.toString()}`;
       console.log('Full URL generated:', fullUrl);
 
+      // For Digital Marketing, use the auto-generated domain, otherwise use user input
+      const domainToUse = formData.channel === 'Digital Marketing' ? formData.domain : (formData.domain || undefined);
+
       // Save to database first to get ID for tracking URL
       console.log('Saving to database...');
       const { data: linkData, error: dbError } = await supabase
@@ -255,14 +277,15 @@ const UTMBuilder = () => {
           placement: formData.placement,
           cba: formData.cbaCode || null,
           code: formData.codeName || null,
-          domain: formData.domain || null,
+          domain: domainToUse || null,
           utm_source: utmSource,
           utm_medium: utmMedium,
           utm_campaign: utmCampaign,
           full_url: fullUrl,
           short_url: '', // Will be updated after we get the short URL
           tracking_url: '', // Will be updated after we get the ID
-          clicks: 0
+          clicks: 0,
+          unique_clicks: 0
         })
         .select()
         .single();
@@ -284,7 +307,7 @@ const UTMBuilder = () => {
 
       // Generate short URL using the tracking URL
       console.log('Generating short URL...');
-      const shortUrl = await generateShortUrl(trackingUrl, formData.domain || undefined);
+      const shortUrl = await generateShortUrl(trackingUrl, domainToUse);
       console.log('Short URL generated:', shortUrl);
 
       // Update the record with the short URL and tracking URL
@@ -348,6 +371,7 @@ const UTMBuilder = () => {
   };
 
   const showCBACode = formData.program === 'Academy' && formData.channel === 'Influencer Marketing';
+  const showDomainField = formData.channel !== 'Digital Marketing';
   const availablePlacements = platformPlacements[formData.platform] || [];
   const availableLandingPages = landingPages[formData.program]?.[formData.channel] || [];
 
@@ -473,19 +497,40 @@ const UTMBuilder = () => {
             </div>
           )}
 
-          {/* Domain Name (optional) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Domain Name (Optional)
-            </label>
-            <input
-              type="text"
-              value={formData.domain}
-              onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Custom alias for short URL"
-            />
-          </div>
+          {/* Domain Name (conditional - hide for Digital Marketing) */}
+          {showDomainField && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Domain Name (Optional)
+              </label>
+              <input
+                type="text"
+                value={formData.domain}
+                onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Custom alias for short URL"
+              />
+            </div>
+          )}
+
+          {/* Show auto-generated alias for Digital Marketing */}
+          {!showDomainField && formData.domain && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Auto-generated Alias
+              </label>
+              <input
+                type="text"
+                value={formData.domain}
+                readOnly
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+                placeholder="Auto-generated for Digital Marketing"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                This alias is automatically generated for Digital Marketing campaigns
+              </p>
+            </div>
+          )}
 
           {/* CBA Code (conditional) */}
           {showCBACode && (

@@ -27,6 +27,14 @@ serve(async (req) => {
       })
     }
 
+    // Get client IP and user agent for unique tracking
+    const clientIP = req.headers.get('x-forwarded-for') || 
+                    req.headers.get('x-real-ip') || 
+                    'unknown'
+    const userAgent = req.headers.get('user-agent') || 'unknown'
+
+    console.log('Client info:', { clientIP, userAgent })
+
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -36,7 +44,7 @@ serve(async (req) => {
     console.log('Fetching UTM link record for ID:', id)
     const { data: linkData, error: fetchError } = await supabase
       .from('utm_links')
-      .select('full_url, clicks')
+      .select('full_url, clicks, unique_clicks')
       .eq('id', id)
       .single()
 
@@ -56,23 +64,62 @@ serve(async (req) => {
       })
     }
 
-    console.log('Found link with current clicks:', linkData.clicks)
+    console.log('Found link with current clicks:', linkData.clicks, 'unique clicks:', linkData.unique_clicks)
     console.log('Full URL to redirect to:', linkData.full_url)
 
-    // Increment click count
-    console.log('Incrementing click count...')
+    // Check if this is a unique click (same IP + user agent combination hasn't clicked before)
+    console.log('Checking for existing click log...')
+    const { data: existingClick, error: clickCheckError } = await supabase
+      .from('click_logs')
+      .select('id')
+      .eq('utm_link_id', id)
+      .eq('ip_address', clientIP)
+      .eq('user_agent', userAgent)
+      .maybeSingle()
+
+    if (clickCheckError) {
+      console.error('Error checking existing clicks:', clickCheckError)
+    }
+
+    const isUniqueClick = !existingClick
+    console.log('Is unique click:', isUniqueClick)
+
+    // Log this click
+    console.log('Logging click...')
+    const { error: logError } = await supabase
+      .from('click_logs')
+      .insert({
+        utm_link_id: id,
+        ip_address: clientIP,
+        user_agent: userAgent
+      })
+
+    if (logError) {
+      console.error('Error logging click:', logError)
+    }
+
+    // Update click counts
+    console.log('Updating click counts...')
+    const updateData: any = {
+      clicks: (linkData.clicks || 0) + 1
+    }
+
+    // Only increment unique clicks if this is a unique click
+    if (isUniqueClick) {
+      updateData.unique_clicks = (linkData.unique_clicks || 0) + 1
+      console.log('Incrementing unique clicks to:', updateData.unique_clicks)
+    }
+
     const { error: updateError } = await supabase
       .from('utm_links')
-      .update({ 
-        clicks: (linkData.clicks || 0) + 1
-      })
+      .update(updateData)
       .eq('id', id)
 
     if (updateError) {
       console.error('Database error while updating clicks:', updateError)
       // Still redirect even if database update fails
     } else {
-      console.log('Successfully incremented clicks to:', (linkData.clicks || 0) + 1)
+      console.log('Successfully updated clicks. Total:', updateData.clicks, 'Unique:', updateData.unique_clicks)
     }
 
     // Redirect to the full URL (with UTM parameters)

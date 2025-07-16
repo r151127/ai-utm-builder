@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from '@/integrations/supabase/client';
 import { Tables } from '@/integrations/supabase/types';
+import { useAuth } from './AuthProvider';
 import {
   Pagination,
   PaginationContent,
@@ -22,6 +22,7 @@ import {
 interface UTMAnalytics extends Tables<'utm_links'> {}
 
 const Dashboard = () => {
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterProgram, setFilterProgram] = useState('all');
   const [filterChannel, setFilterChannel] = useState('all');
@@ -40,15 +41,36 @@ const Dashboard = () => {
   const totalPages = Math.ceil(totalCount / itemsPerPage);
 
   const { data: utmLinksData, error, isLoading, refetch } = useQuery({
-    queryKey: ['utmLinks', searchTerm, filterProgram, filterChannel, filterPlatform, filterSource, currentPage],
+    queryKey: ['utmLinks', searchTerm, filterProgram, filterChannel, filterPlatform, filterSource, currentPage, user?.id, user?.email],
     queryFn: async () => {
+      if (!user?.id) {
+        console.log('No user ID available');
+        return [];
+      }
+
+      // Check if user is admin
+      const { data: roleData } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('role', 'admin')
+        .maybeSingle();
+
+      const isAdmin = !!roleData;
+      console.log('User is admin:', isAdmin);
+
       // First, get the total count
       let countQuery = supabase
         .from('utm_links')
         .select('*', { count: 'exact', head: true });
 
+      // Apply user-based filtering
+      if (!isAdmin) {
+        countQuery = countQuery.or(`user_id.eq.${user.id},and(user_id.is.null,email.eq.${user.email})`);
+      }
+
       if (searchTerm) {
-        countQuery = countQuery.ilike('short_url', `%${searchTerm}%`);
+        countQuery = countQuery.ilike('email', `%${searchTerm}%`);
       }
       if (filterProgram !== 'all') {
         countQuery = countQuery.eq('program', filterProgram);
@@ -75,8 +97,13 @@ const Dashboard = () => {
         .order('created_at', { ascending: false })
         .range(startIndex, endIndex);
 
+      // Apply user-based filtering for data query
+      if (!isAdmin) {
+        dataQuery = dataQuery.or(`user_id.eq.${user.id},and(user_id.is.null,email.eq.${user.email})`);
+      }
+
       if (searchTerm) {
-        dataQuery = dataQuery.ilike('short_url', `%${searchTerm}%`);
+        dataQuery = dataQuery.ilike('email', `%${searchTerm}%`);
       }
       if (filterProgram !== 'all') {
         dataQuery = dataQuery.eq('program', filterProgram);
@@ -96,6 +123,7 @@ const Dashboard = () => {
 
       return data;
     },
+    enabled: !!user?.id,
   });
 
   useEffect(() => {
@@ -144,7 +172,7 @@ const Dashboard = () => {
     }
 
     const headers = [
-      'Created At', 'Source', 'Short URL', 'Clicks', 'Program', 'Channel', 
+      'Created At', 'Source', 'Short URL', 'Clicks', 'Unique Clicks', 'Program', 'Channel', 
       'Platform', 'Placement', 'Email', 'UTM Source', 'UTM Medium', 'UTM Campaign',
       'CBA', 'Code', 'Domain'
     ];
@@ -156,6 +184,7 @@ const Dashboard = () => {
         `"${link.source || 'individual'}"`,
         `"${link.short_url}"`,
         link.clicks || 0,
+        link.unique_clicks || 0,
         `"${link.program}"`,
         `"${link.channel}"`,
         `"${link.platform}"`,
@@ -259,7 +288,7 @@ const Dashboard = () => {
           <div className="flex flex-col lg:flex-row gap-4 mb-4">
             <div className="flex-1">
               <Input
-                placeholder="Search by email, campaign, or URL..."
+                placeholder="Search by email address..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full"
@@ -347,6 +376,7 @@ const Dashboard = () => {
                   <TableHead className="w-[180px]">Short URL</TableHead>
                   <TableHead className="w-[120px]">Actions</TableHead>
                   <TableHead className="w-[80px]">Clicks</TableHead>
+                  <TableHead className="w-[80px]">Unique Clicks</TableHead>
                   <TableHead className="w-[100px]">Program</TableHead>
                   <TableHead className="w-[120px]">Channel</TableHead>
                   <TableHead className="w-[100px]">Platform</TableHead>
@@ -401,6 +431,11 @@ const Dashboard = () => {
                     <TableCell>
                       <span className={getClicksColor(link.clicks)}>
                         {link.clicks || 0}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className={getClicksColor(link.unique_clicks)}>
+                        {link.unique_clicks || 0}
                       </span>
                     </TableCell>
                     <TableCell>

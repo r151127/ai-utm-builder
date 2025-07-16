@@ -14,6 +14,38 @@ export type Database = {
   }
   public: {
     Tables: {
+      click_logs: {
+        Row: {
+          created_at: string
+          id: string
+          ip_address: string | null
+          user_agent: string | null
+          utm_link_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          user_agent?: string | null
+          utm_link_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          user_agent?: string | null
+          utm_link_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "click_logs_utm_link_id_fkey"
+            columns: ["utm_link_id"]
+            isOneToOne: false
+            referencedRelation: "utm_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string | null
@@ -52,6 +84,7 @@ export type Database = {
           short_url: string
           source: string | null
           tracking_url: string
+          unique_clicks: number | null
           user_id: string | null
           utm_campaign: string
           utm_medium: string
@@ -73,6 +106,7 @@ export type Database = {
           short_url: string
           source?: string | null
           tracking_url: string
+          unique_clicks?: number | null
           user_id?: string | null
           utm_campaign: string
           utm_medium: string
@@ -94,6 +128,7 @@ export type Database = {
           short_url?: string
           source?: string | null
           tracking_url?: string
+          unique_clicks?: number | null
           user_id?: string | null
           utm_campaign?: string
           utm_medium?: string
