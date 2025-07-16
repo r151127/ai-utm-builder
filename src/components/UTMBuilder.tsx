@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
@@ -158,14 +157,10 @@ const UTMBuilder = () => {
       utmSource = platformKey;
       utmMedium = formData.placement.toLowerCase().replace(/\s+/g, '_');
       
-      // Special utm_campaign format for Influencer Marketing
+      // Special utm_campaign format for Influencer Marketing - NO month/year suffix
       utmCampaign = `${channelKey}-${formData.program.toLowerCase()}`;
       if (formData.codeName) utmCampaign += `-${formData.codeName}`;
       if (formData.cbaCode) utmCampaign += `-${formData.cbaCode}`;
-      // Add current month/year
-      const now = new Date();
-      const monthYear = `${now.toLocaleString('default', { month: 'long' }).toLowerCase()}${now.getFullYear()}`;
-      utmCampaign += `-${monthYear}`;
     } else {
       // For all other channels: use the original format
       utmSource = `${channelKey}-${platformKey}`;

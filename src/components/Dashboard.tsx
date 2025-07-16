@@ -48,23 +48,16 @@ const Dashboard = () => {
         return [];
       }
 
-      // Check if user is admin
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('role', 'admin')
-        .maybeSingle();
-
-      const isAdmin = !!roleData;
-      console.log('User is admin:', isAdmin);
+      // Check if user is admin based on email
+      const isAdmin = user.email === 'kasturi.vankela@nxtwave.tech';
+      console.log('User is admin:', isAdmin, 'Email:', user.email);
 
       // First, get the total count
       let countQuery = supabase
         .from('utm_links')
         .select('*', { count: 'exact', head: true });
 
-      // Apply user-based filtering
+      // Apply user-based filtering for non-admin users
       if (!isAdmin) {
         countQuery = countQuery.or(`user_id.eq.${user.id},and(user_id.is.null,email.eq.${user.email})`);
       }
@@ -97,7 +90,7 @@ const Dashboard = () => {
         .order('created_at', { ascending: false })
         .range(startIndex, endIndex);
 
-      // Apply user-based filtering for data query
+      // Apply user-based filtering for data query for non-admin users
       if (!isAdmin) {
         dataQuery = dataQuery.or(`user_id.eq.${user.id},and(user_id.is.null,email.eq.${user.email})`);
       }
@@ -121,6 +114,7 @@ const Dashboard = () => {
       const { data, error: dataError } = await dataQuery;
       if (dataError) throw dataError;
 
+      console.log('Filtered data count:', data?.length, 'Total count:', count);
       return data;
     },
     enabled: !!user?.id,
