@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
@@ -149,12 +150,31 @@ const UTMBuilder = () => {
     const channelKey = channelKeys[formData.channel];
     const platformKey = platformKeys[formData.platform];
     
-    const utmSource = `${channelKey}-${platformKey}`;
-    const utmMedium = formData.placement.toLowerCase().replace(/\s+/g, '_');
+    // Special handling for Influencer Marketing
+    let utmSource, utmMedium, utmCampaign;
     
-    let utmCampaign = `${channelKey}-${formData.program.toLowerCase()}`;
-    if (formData.cbaCode) utmCampaign += `-${formData.cbaCode}`;
-    if (formData.codeName) utmCampaign += `-${formData.codeName}`;
+    if (formData.channel === 'Influencer Marketing') {
+      // For Influencer Marketing: use platform key directly (e.g., "insta" instead of "ifmkt-insta")
+      utmSource = platformKey;
+      utmMedium = formData.placement.toLowerCase().replace(/\s+/g, '_');
+      
+      // Special utm_campaign format for Influencer Marketing
+      utmCampaign = `${channelKey}-${formData.program.toLowerCase()}`;
+      if (formData.codeName) utmCampaign += `-${formData.codeName}`;
+      if (formData.cbaCode) utmCampaign += `-${formData.cbaCode}`;
+      // Add current month/year
+      const now = new Date();
+      const monthYear = `${now.toLocaleString('default', { month: 'long' }).toLowerCase()}${now.getFullYear()}`;
+      utmCampaign += `-${monthYear}`;
+    } else {
+      // For all other channels: use the original format
+      utmSource = `${channelKey}-${platformKey}`;
+      utmMedium = formData.placement.toLowerCase().replace(/\s+/g, '_');
+      
+      utmCampaign = `${channelKey}-${formData.program.toLowerCase()}`;
+      if (formData.cbaCode) utmCampaign += `-${formData.cbaCode}`;
+      if (formData.codeName) utmCampaign += `-${formData.codeName}`;
+    }
 
     return { utmSource, utmMedium, utmCampaign };
   };
@@ -257,6 +277,11 @@ const UTMBuilder = () => {
         utm_medium: utmMedium,
         utm_campaign: utmCampaign
       });
+      
+      // Special handling for Influencer Marketing: add cba_code parameter
+      if (formData.channel === 'Influencer Marketing' && formData.cbaCode) {
+        urlParams.set('cba_code', formData.cbaCode);
+      }
       
       const fullUrl = `${baseUrl}?${urlParams.toString()}`;
       console.log('Full URL generated:', fullUrl);
