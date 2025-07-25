@@ -14,8 +14,7 @@ const UTMBuilder = () => {
     landingPage: '',
     domain: '',
     cbaCode: '',
-    codeName: '',
-    email: ''
+    codeName: ''
   });
 
   const [loading, setLoading] = useState(false);
@@ -230,8 +229,8 @@ const UTMBuilder = () => {
 
     console.log('User authenticated:', user.id);
 
-    // Validate required fields including email
-    const requiredFields = ['program', 'channel', 'platform', 'placement', 'landingPage', 'email'];
+    // Validate required fields (email is automatically captured from user)
+    const requiredFields = ['program', 'channel', 'platform', 'placement', 'landingPage'];
     const missingFields = requiredFields.filter(field => !formData[field as keyof typeof formData]);
     
     if (missingFields.length > 0) {
@@ -246,13 +245,13 @@ const UTMBuilder = () => {
       return;
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      const errorMsg = 'Please enter a valid email address.';
+    // Use authenticated user's email
+    const userEmail = user.email;
+    if (!userEmail) {
+      const errorMsg = 'User email not found. Please sign out and sign in again.';
       setError(errorMsg);
       toast({
-        title: "Invalid Email",
+        title: "Email Missing",
         description: errorMsg,
         variant: "destructive",
       });
@@ -290,7 +289,7 @@ const UTMBuilder = () => {
         .from('utm_links')
         .insert({
           user_id: user.id,
-          email: formData.email,
+          email: userEmail,
           program: formData.program,
           channel: formData.channel,
           platform: formData.platform,
@@ -408,20 +407,6 @@ const UTMBuilder = () => {
             </div>
           )}
 
-          {/* Email */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Email Address *
-            </label>
-            <input
-              type="email"
-              required
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Enter your email address"
-            />
-          </div>
 
           {/* Program */}
           <div>
