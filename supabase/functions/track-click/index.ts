@@ -28,12 +28,14 @@ serve(async (req) => {
     }
 
     // Get client IP and user agent for unique tracking
-    const clientIP = req.headers.get('x-forwarded-for') || 
-                    req.headers.get('x-real-ip') || 
-                    'unknown'
+    // Extract only the first IP address from the forwarded chain for consistent tracking
+    const rawClientIP = req.headers.get('x-forwarded-for') || 
+                       req.headers.get('x-real-ip') || 
+                       'unknown'
+    const clientIP = rawClientIP.split(',')[0].trim()
     const userAgent = req.headers.get('user-agent') || 'unknown'
 
-    console.log('Client info:', { clientIP, userAgent })
+    console.log('Client info:', { clientIP, userAgent, rawClientIP })
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
@@ -67,25 +69,10 @@ serve(async (req) => {
     console.log('Found link with current clicks:', linkData.clicks, 'unique clicks:', linkData.unique_clicks)
     console.log('Full URL to redirect to:', linkData.full_url)
 
-    // Check if this is a unique click (same IP + user agent combination hasn't clicked before)
-    console.log('Checking for existing click log...')
-    const { data: existingClick, error: clickCheckError } = await supabase
-      .from('click_logs')
-      .select('id')
-      .eq('utm_link_id', id)
-      .eq('ip_address', clientIP)
-      .eq('user_agent', userAgent)
-      .maybeSingle()
-
-    if (clickCheckError) {
-      console.error('Error checking existing clicks:', clickCheckError)
-    }
-
-    const isUniqueClick = !existingClick
-    console.log('Is unique click:', isUniqueClick)
-
-    // Log this click
-    console.log('Logging click...')
+    // Use constraint-based approach to determine unique clicks
+    // Try to insert the click log - if it succeeds, it's a unique click
+    // If it fails due to unique constraint, it's a repeat click
+    console.log('Attempting to log click...')
     const { error: logError } = await supabase
       .from('click_logs')
       .insert({
@@ -94,9 +81,21 @@ serve(async (req) => {
         user_agent: userAgent
       })
 
+    let isUniqueClick = true
     if (logError) {
-      console.error('Error logging click:', logError)
+      // Check if the error is due to unique constraint violation (code 23505)
+      if (logError.code === '23505' || logError.message?.includes('unique_utm_link_ip_user_agent')) {
+        console.log('Duplicate click detected - not a unique visitor')
+        isUniqueClick = false
+      } else {
+        console.error('Unexpected error logging click:', logError)
+        // Continue with processing even if logging fails
+      }
+    } else {
+      console.log('Successfully logged new unique click')
     }
+
+    console.log('Is unique click:', isUniqueClick)
 
     // Update click counts
     console.log('Updating click counts...')
@@ -108,6 +107,8 @@ serve(async (req) => {
     if (isUniqueClick) {
       updateData.unique_clicks = (linkData.unique_clicks || 0) + 1
       console.log('Incrementing unique clicks to:', updateData.unique_clicks)
+    } else {
+      console.log('Not incrementing unique clicks - repeat visitor')
     }
 
     const { error: updateError } = await supabase
