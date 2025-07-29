@@ -77,7 +77,7 @@ const UTMBuilder = () => {
     'Academy': {
       'Affiliate': ['https://accounts.ccbp.in/register/webinar-iitians-ccbp-4.0-academy-affiliate'],
       'Digital Marketing': ['https://www.ccbp.in/blueprint-softwarecareer', 'https://www.ccbp.in/academy/highpaid-job-dm', 'https://www.ccbp.in/academy/start-from-college'],
-      'Influencer Marketing': ['https://accounts.ccbp.in/register/webinar-iitians-ccbp-4.0-academy-social-media'],
+      'Influencer Marketing': ['https://accounts.ccbp.in/register/webinar-iitians-ccbp-4.0-academy-social-media', 'https://www.ccbp.in/academy/highpaid-job'],
       'Employee Referral': ['https://accounts.ccbp.in/register/webinar-iitians-ccbp-4.0-academy-inbound'],
       'Invite & Earn': ['https://accounts.ccbp.in/register/academy-invite-and-earn'],
       'Digital Affiliate': ['https://accounts.ccbp.in/register/webinar-iitians-ccbp-4.0-academy-affiliate'],
