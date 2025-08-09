@@ -91,7 +91,8 @@ const UTMBuilder = () => {
       'Digital Affiliate': ['https://accounts.ccbp.in/register/webinar-iitians-ccbp-4.0-academy-affiliate'],
       'College Dosth': ['https://www.ccbp.in/academy/start-from-college'],
       'Brand Search': ['https://www.ccbp.in/blueprint-softwarecareer'],
-      'SEO': ['https://www.ccbp.in/blueprint-softwarecareer']
+      'SEO': ['https://www.ccbp.in/blueprint-softwarecareer'],
+      'WhatsApp Bot': ['WhatsApp Bot']
     },
     'Intensive': {
       'Affiliate': ['https://accounts.ccbp.in/register/ccbp-affiliate'],
@@ -102,7 +103,8 @@ const UTMBuilder = () => {
       'Digital Affiliate': ['https://accounts.ccbp.in/register/ccbp-affiliate'],
       'College Dosth': ['https://www.ccbp.in/intensive'],
       'Brand Search': ['https://www.ccbp.in/intensive'],
-      'SEO': ['https://www.ccbp.in/intensive']
+      'SEO': ['https://www.ccbp.in/intensive'],
+      'WhatsApp Bot': ['WhatsApp Bot']
     },
     'NIAT': {
       'Affiliate': ['https://apply.niatindia.com/login'],
@@ -113,7 +115,8 @@ const UTMBuilder = () => {
       'Digital Affiliate': ['https://apply.niatindia.com/login'],
       'College Dosth': ['https://apply.niatindia.com/login'],
       'Brand Search': ['https://apply.niatindia.com/login'],
-      'SEO': ['https://apply.niatindia.com/login']
+      'SEO': ['https://apply.niatindia.com/login'],
+      'WhatsApp Bot': ['WhatsApp Bot']
     }
   };
 
@@ -311,6 +314,28 @@ const UTMBuilder = () => {
     const requiredFields = ['program', 'channel', 'platform', 'placement', 'landingPage'];
     const missingFields = requiredFields.filter(field => !formData[field as keyof typeof formData]);
     
+    // Additional validation for WhatsApp Bot
+    if (formData.landingPage === 'WhatsApp Bot') {
+      if (!formData.whatsappNumber) {
+        missingFields.push('WhatsApp Number');
+      }
+      if (!formData.predefinedText) {
+        missingFields.push('Predefined Text');
+      }
+      
+      // Validate WhatsApp number format (10 digits)
+      if (formData.whatsappNumber && !/^\d{10}$/.test(formData.whatsappNumber)) {
+        setError('WhatsApp Number must be exactly 10 digits');
+        toast({
+          title: "Invalid WhatsApp Number",
+          description: "WhatsApp Number must be exactly 10 digits",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+    }
+    
     // Additional validation for College Dosth channel
     if (formData.channel === 'College Dosth') {
       if (!formData.whatsappNumber) {
@@ -455,6 +480,11 @@ const UTMBuilder = () => {
       if (formData.channel === 'College Dosth' && formData.whatsappNumber) {
         saveWhatsappSuggestion(formData.whatsappNumber);
       }
+      
+      // Save WhatsApp number to suggestions if it's a WhatsApp Bot submission
+      if (formData.landingPage === 'WhatsApp Bot' && formData.whatsappNumber) {
+        saveWhatsappSuggestion(formData.whatsappNumber);
+      }
 
       toast({
         title: "UTM Links Generated",
@@ -497,6 +527,7 @@ const UTMBuilder = () => {
   const showCBACode = formData.program === 'Academy' && formData.channel === 'Influencer Marketing';
   const showDomainField = formData.channel !== 'Digital Marketing';
   const showCollegeDosthFields = formData.channel === 'College Dosth';
+  const showWhatsAppBotFields = formData.landingPage === 'WhatsApp Bot';
   const availablePlacements = platformPlacements[formData.platform] || [];
   const availableLandingPages = landingPages[formData.program]?.[formData.channel] || [];
 
@@ -525,6 +556,129 @@ const UTMBuilder = () => {
             </div>
           )}
 
+          {/* WhatsApp Number (conditional for WhatsApp Bot) */}
+          {showWhatsAppBotFields && (
+            <div className="relative">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                WhatsApp Number *
+                {whatsappSuggestions.length > 0 && (
+                  <span className="text-xs text-gray-500 ml-2">
+                    ({whatsappSuggestions.length} saved)
+                  </span>
+                )}
+              </label>
+              <div className="relative">
+                <input
+                  ref={whatsappInputRef}
+                  type="tel"
+                  value={formData.whatsappNumber}
+                  onChange={(e) => handleWhatsAppNumberChange(e.target.value)}
+                  onFocus={() => whatsappSuggestions.length > 0 && setShowSuggestions(true)}
+                  className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                    formData.whatsappNumber && !/^\d{10}$/.test(formData.whatsappNumber) 
+                      ? 'border-red-300 bg-red-50' 
+                      : formData.whatsappNumber.length === 10 
+                      ? 'border-green-300 bg-green-50' 
+                      : 'border-gray-300'
+                  }`}
+                  placeholder="Enter 10-digit WhatsApp number"
+                  maxLength={10}
+                />
+                {whatsappSuggestions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSuggestions(!showSuggestions)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              
+              {/* Suggestions Dropdown */}
+              {showSuggestions && whatsappSuggestions.length > 0 && (
+                <div 
+                  ref={suggestionsRef}
+                  className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+                >
+                  <div className="p-2 border-b border-gray-100">
+                    <span className="text-xs font-medium text-gray-600">Recently used numbers</span>
+                  </div>
+                  {whatsappSuggestions.map((number: string, index: number) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => selectWhatsappSuggestion(number)}
+                        className="flex-1 text-left text-sm font-mono"
+                      >
+                        {number}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeWhatsappSuggestion(number);
+                        }}
+                        className="text-gray-400 hover:text-red-500 ml-2"
+                        title="Remove from suggestions"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                  {whatsappSuggestions.length > 1 && (
+                    <div className="border-t border-gray-100 p-2">
+                      <button
+                        type="button"
+                        onClick={clearAllSuggestions}
+                        className="w-full text-xs text-red-600 hover:text-red-700 py-1"
+                      >
+                        Clear all suggestions
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {formData.whatsappNumber && (
+                <p className={`text-xs mt-1 ${
+                  formData.whatsappNumber.length === 10 
+                    ? 'text-green-600' 
+                    : 'text-gray-500'
+                }`}>
+                  {formData.whatsappNumber.length}/10 digits
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Predefined Text (conditional for WhatsApp Bot) */}
+          {showWhatsAppBotFields && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Predefined Text *
+              </label>
+              <textarea
+                value={formData.predefinedText}
+                onChange={(e) => setFormData({ ...formData, predefinedText: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter predefined message text"
+                rows={3}
+              />
+              {formData.predefinedText && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {formData.predefinedText.length} characters
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Program */}
           <div>
