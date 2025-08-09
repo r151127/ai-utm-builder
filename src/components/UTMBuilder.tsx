@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from './AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
 import { Copy, Check, ExternalLink, AlertCircle } from 'lucide-react';
@@ -27,6 +27,12 @@ const UTMBuilder = () => {
 
   const [copiedField, setCopiedField] = useState<string>('');
   const [error, setError] = useState('');
+  
+  // WhatsApp suggestions state
+  const [whatsappSuggestions, setWhatsappSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const whatsappInputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   // Configuration data with updated channel shortcuts per user requirements
   const programs = ['Academy', 'Intensive', 'NIAT'];
@@ -110,6 +116,70 @@ const UTMBuilder = () => {
       'SEO': ['https://apply.niatindia.com/login']
     }
   };
+
+  // WhatsApp suggestions management
+  const loadWhatsappSuggestions = () => {
+    try {
+      const saved = localStorage.getItem('whatsapp_suggestions');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const saveWhatsappSuggestion = (number: string) => {
+    try {
+      const suggestions = loadWhatsappSuggestions();
+      const filtered = suggestions.filter((n: string) => n !== number);
+      const updated = [number, ...filtered].slice(0, 5); // Keep max 5 recent numbers
+      localStorage.setItem('whatsapp_suggestions', JSON.stringify(updated));
+      setWhatsappSuggestions(updated);
+    } catch (error) {
+      console.error('Failed to save WhatsApp suggestion:', error);
+    }
+  };
+
+  const removeWhatsappSuggestion = (number: string) => {
+    try {
+      const suggestions = loadWhatsappSuggestions();
+      const updated = suggestions.filter((n: string) => n !== number);
+      localStorage.setItem('whatsapp_suggestions', JSON.stringify(updated));
+      setWhatsappSuggestions(updated);
+    } catch (error) {
+      console.error('Failed to remove WhatsApp suggestion:', error);
+    }
+  };
+
+  const clearAllSuggestions = () => {
+    try {
+      localStorage.removeItem('whatsapp_suggestions');
+      setWhatsappSuggestions([]);
+    } catch (error) {
+      console.error('Failed to clear WhatsApp suggestions:', error);
+    }
+  };
+
+  // Load suggestions on mount
+  useEffect(() => {
+    setWhatsappSuggestions(loadWhatsappSuggestions());
+  }, []);
+
+  // Handle clicks outside suggestions dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        whatsappInputRef.current &&
+        suggestionsRef.current &&
+        !whatsappInputRef.current.contains(event.target as Node) &&
+        !suggestionsRef.current.contains(event.target as Node)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Function to generate random alias for Digital Marketing
   const generateRandomAlias = () => {
@@ -381,6 +451,11 @@ const UTMBuilder = () => {
         shortUrl: shortUrl
       });
 
+      // Save WhatsApp number to suggestions if it's a College Dosth submission
+      if (formData.channel === 'College Dosth' && formData.whatsappNumber) {
+        saveWhatsappSuggestion(formData.whatsappNumber);
+      }
+
       toast({
         title: "UTM Links Generated",
         description: "Your trackable short URL has been generated successfully!",
@@ -430,6 +505,11 @@ const UTMBuilder = () => {
     // Only allow digits and limit to 10 characters
     const numericValue = value.replace(/\D/g, '').slice(0, 10);
     setFormData({ ...formData, whatsappNumber: numericValue });
+  };
+
+  const selectWhatsappSuggestion = (number: string) => {
+    setFormData({ ...formData, whatsappNumber: number });
+    setShowSuggestions(false);
   };
 
   return (
@@ -607,24 +687,95 @@ const UTMBuilder = () => {
 
           {/* WhatsApp Number (conditional for College Dosth) */}
           {showCollegeDosthFields && (
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 WhatsApp Number *
+                {whatsappSuggestions.length > 0 && (
+                  <span className="text-xs text-gray-500 ml-2">
+                    ({whatsappSuggestions.length} saved)
+                  </span>
+                )}
               </label>
-              <input
-                type="tel"
-                value={formData.whatsappNumber}
-                onChange={(e) => handleWhatsAppNumberChange(e.target.value)}
-                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  formData.whatsappNumber && !/^\d{10}$/.test(formData.whatsappNumber) 
-                    ? 'border-red-300 bg-red-50' 
-                    : formData.whatsappNumber.length === 10 
-                    ? 'border-green-300 bg-green-50' 
-                    : 'border-gray-300'
-                }`}
-                placeholder="Enter 10-digit WhatsApp number"
-                maxLength={10}
-              />
+              <div className="relative">
+                <input
+                  ref={whatsappInputRef}
+                  type="tel"
+                  value={formData.whatsappNumber}
+                  onChange={(e) => handleWhatsAppNumberChange(e.target.value)}
+                  onFocus={() => whatsappSuggestions.length > 0 && setShowSuggestions(true)}
+                  className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                    formData.whatsappNumber && !/^\d{10}$/.test(formData.whatsappNumber) 
+                      ? 'border-red-300 bg-red-50' 
+                      : formData.whatsappNumber.length === 10 
+                      ? 'border-green-300 bg-green-50' 
+                      : 'border-gray-300'
+                  }`}
+                  placeholder="Enter 10-digit WhatsApp number"
+                  maxLength={10}
+                />
+                {whatsappSuggestions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSuggestions(!showSuggestions)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              
+              {/* Suggestions Dropdown */}
+              {showSuggestions && whatsappSuggestions.length > 0 && (
+                <div 
+                  ref={suggestionsRef}
+                  className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+                >
+                  <div className="p-2 border-b border-gray-100">
+                    <span className="text-xs font-medium text-gray-600">Recently used numbers</span>
+                  </div>
+                  {whatsappSuggestions.map((number: string, index: number) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => selectWhatsappSuggestion(number)}
+                        className="flex-1 text-left text-sm font-mono"
+                      >
+                        {number}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeWhatsappSuggestion(number);
+                        }}
+                        className="text-gray-400 hover:text-red-500 ml-2"
+                        title="Remove from suggestions"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                  {whatsappSuggestions.length > 1 && (
+                    <div className="border-t border-gray-100 p-2">
+                      <button
+                        type="button"
+                        onClick={clearAllSuggestions}
+                        className="w-full text-xs text-red-600 hover:text-red-700 py-1"
+                      >
+                        Clear all suggestions
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              
               {formData.whatsappNumber && (
                 <p className={`text-xs mt-1 ${
                   formData.whatsappNumber.length === 10 
