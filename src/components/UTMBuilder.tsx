@@ -14,7 +14,9 @@ const UTMBuilder = () => {
     landingPage: '',
     domain: '',
     cbaCode: '',
-    codeName: ''
+    codeName: '',
+    whatsappNumber: '',
+    predefinedText: ''
   });
 
   const [loading, setLoading] = useState(false);
@@ -141,6 +143,12 @@ const UTMBuilder = () => {
       updatedData.domain = ''; // Clear domain for non-Digital Marketing channels
     }
 
+    // Reset College Dosth specific fields when channel changes
+    if (field === 'channel' && value !== 'College Dosth') {
+      updatedData.whatsappNumber = '';
+      updatedData.predefinedText = '';
+    }
+
     setFormData(updatedData);
   };
 
@@ -232,6 +240,28 @@ const UTMBuilder = () => {
     // Validate required fields (email is automatically captured from user)
     const requiredFields = ['program', 'channel', 'platform', 'placement', 'landingPage'];
     const missingFields = requiredFields.filter(field => !formData[field as keyof typeof formData]);
+    
+    // Additional validation for College Dosth channel
+    if (formData.channel === 'College Dosth') {
+      if (!formData.whatsappNumber) {
+        missingFields.push('WhatsApp Number');
+      }
+      if (!formData.predefinedText) {
+        missingFields.push('Predefined Text');
+      }
+      
+      // Validate WhatsApp number format (10 digits)
+      if (formData.whatsappNumber && !/^\d{10}$/.test(formData.whatsappNumber)) {
+        setError('WhatsApp Number must be exactly 10 digits');
+        toast({
+          title: "Invalid WhatsApp Number",
+          description: "WhatsApp Number must be exactly 10 digits",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+    }
     
     if (missingFields.length > 0) {
       const errorMsg = `Please fill in all required fields: ${missingFields.join(', ')}`;
@@ -391,8 +421,16 @@ const UTMBuilder = () => {
 
   const showCBACode = formData.program === 'Academy' && formData.channel === 'Influencer Marketing';
   const showDomainField = formData.channel !== 'Digital Marketing';
+  const showCollegeDosthFields = formData.channel === 'College Dosth';
   const availablePlacements = platformPlacements[formData.platform] || [];
   const availableLandingPages = landingPages[formData.program]?.[formData.channel] || [];
+
+  // WhatsApp number validation handler
+  const handleWhatsAppNumberChange = (value: string) => {
+    // Only allow digits and limit to 10 characters
+    const numericValue = value.replace(/\D/g, '').slice(0, 10);
+    setFormData({ ...formData, whatsappNumber: numericValue });
+  };
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -566,6 +604,59 @@ const UTMBuilder = () => {
               placeholder="Enter code or name"
             />
           </div>
+
+          {/* WhatsApp Number (conditional for College Dosth) */}
+          {showCollegeDosthFields && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                WhatsApp Number *
+              </label>
+              <input
+                type="tel"
+                value={formData.whatsappNumber}
+                onChange={(e) => handleWhatsAppNumberChange(e.target.value)}
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                  formData.whatsappNumber && !/^\d{10}$/.test(formData.whatsappNumber) 
+                    ? 'border-red-300 bg-red-50' 
+                    : formData.whatsappNumber.length === 10 
+                    ? 'border-green-300 bg-green-50' 
+                    : 'border-gray-300'
+                }`}
+                placeholder="Enter 10-digit WhatsApp number"
+                maxLength={10}
+              />
+              {formData.whatsappNumber && (
+                <p className={`text-xs mt-1 ${
+                  formData.whatsappNumber.length === 10 
+                    ? 'text-green-600' 
+                    : 'text-gray-500'
+                }`}>
+                  {formData.whatsappNumber.length}/10 digits
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Predefined Text (conditional for College Dosth) */}
+          {showCollegeDosthFields && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Predefined Text *
+              </label>
+              <textarea
+                value={formData.predefinedText}
+                onChange={(e) => setFormData({ ...formData, predefinedText: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter predefined message text"
+                rows={3}
+              />
+              {formData.predefinedText && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {formData.predefinedText.length} characters
+                </p>
+              )}
+            </div>
+          )}
 
           <button
             type="submit"
