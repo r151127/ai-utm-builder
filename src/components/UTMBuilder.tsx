@@ -284,6 +284,60 @@ const UTMBuilder = () => {
     }
   };
 
+  // Build WhatsApp deep link with invisible UTM encoding (used for College Dosth + WhatsApp Bot)
+  const buildWhatsAppUrlWithInvisibleUTM = (
+    utmCampaign: string,
+    utmMedium: string,
+    utmSource: string,
+    utmTerm: string,
+    utmContent: string,
+    phoneLocal10: string,
+    predefinedText: string
+  ): string => {
+    const NON_PRINTABLES = ['\u200b', '\u200c', '\u200d', '\u200e'];
+    const SEPARATOR = '\u200f';
+
+    // Encode function - converts text to invisible Unicode
+    const encode = (str: string) => {
+      const base = NON_PRINTABLES.length;
+      let output = "";
+      for (let i = 0; i < str.length; i++) {
+        let num = str.charCodeAt(i);
+        let encodedChar = "";
+        while (num > 0) {
+          encodedChar = NON_PRINTABLES[num % base] + encodedChar;
+          num = Math.floor(num / base);
+        }
+        output += encodedChar + SEPARATOR;
+      }
+      return output;
+    };
+
+    // Build UTM params object
+    const utmParams: Record<string, string> = {
+      utm_campaign: utmCampaign,
+      utm_medium: utmMedium,
+      utm_source: utmSource,
+      utm_term: utmTerm || "",
+      utm_content: utmContent || "",
+    };
+
+    // Create combined UTM string
+    const combinedUTM = Object.keys(utmParams)
+      .filter((key) => utmParams[key])
+      .map((key) => `${encodeURIComponent(key)}:${encodeURIComponent(utmParams[key])}`)
+      .join('|');
+
+    // Encode the UTM string
+    const encodedUTM = encode(combinedUTM);
+
+    // Build final WhatsApp URL (prefix with India country code 91)
+    const phone = `91${phoneLocal10}`;
+    const whatsappUrl = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(predefinedText + encodedUTM);
+
+    return whatsappUrl;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('Form submitted with data:', formData);
@@ -312,7 +366,7 @@ const UTMBuilder = () => {
     const missingFields = requiredFields.filter(field => !formData[field as keyof typeof formData]);
     
     // Additional validation for WhatsApp Bot
-    if (formData.landingPage === 'WhatsApp Bot') {
+    if (formData.channel === 'College Dosth' && formData.landingPage === 'WhatsApp Bot') {
       if (!formData.whatsappNumber) {
         missingFields.push('WhatsApp Number');
       }
@@ -365,20 +419,42 @@ const UTMBuilder = () => {
       const { utmSource, utmMedium, utmCampaign } = generateUTMParams();
       console.log('UTM params:', { utmSource, utmMedium, utmCampaign });
       
-      // Build full URL with UTM parameters
-      const baseUrl = formData.landingPage;
-      const urlParams = new URLSearchParams({
-        utm_source: utmSource,
-        utm_medium: utmMedium,
-        utm_campaign: utmCampaign
-      });
-      
-      // Special handling for Influencer Marketing: add cba_code parameter
-      if (formData.channel === 'Influencer Marketing' && formData.cbaCode) {
-        urlParams.set('cba_code', formData.cbaCode);
+      // Build full URL with UTM parameters (special case for College Dosth + WhatsApp Bot)
+      const isCollegeDosthWhatsApp = formData.channel === 'College Dosth' && formData.landingPage === 'WhatsApp Bot';
+      let fullUrl: string;
+
+      if (isCollegeDosthWhatsApp) {
+        // For WhatsApp Bot: utm_source from platform, utm_medium from placement, utm_campaign and utm_term from Code/Name
+        const specialCampaign = formData.codeName || utmCampaign;
+        const utmTerm = formData.codeName || '';
+        const utmContent = '';
+
+        const utmSourceSpecial = platformKeys[formData.platform] || utmSource;
+
+        fullUrl = buildWhatsAppUrlWithInvisibleUTM(
+          specialCampaign,
+          utmMedium,
+          utmSourceSpecial,
+          utmTerm,
+          utmContent,
+          formData.whatsappNumber,
+          formData.predefinedText
+        );
+      } else {
+        const baseUrl = formData.landingPage;
+        const urlParams = new URLSearchParams({
+          utm_source: utmSource,
+          utm_medium: utmMedium,
+          utm_campaign: utmCampaign,
+        });
+
+        // Special handling for Influencer Marketing: add cba_code parameter
+        if (formData.channel === 'Influencer Marketing' && formData.cbaCode) {
+          urlParams.set('cba_code', formData.cbaCode);
+        }
+
+        fullUrl = `${baseUrl}?${urlParams.toString()}`;
       }
-      
-      const fullUrl = `${baseUrl}?${urlParams.toString()}`;
       console.log('Full URL generated:', fullUrl);
 
       // For Digital Marketing, use the auto-generated domain, otherwise use user input
@@ -454,7 +530,7 @@ const UTMBuilder = () => {
 
       
       // Save WhatsApp number to suggestions if it's a WhatsApp Bot submission
-      if (formData.landingPage === 'WhatsApp Bot' && formData.whatsappNumber) {
+      if (formData.channel === 'College Dosth' && formData.landingPage === 'WhatsApp Bot' && formData.whatsappNumber) {
         saveWhatsappSuggestion(formData.whatsappNumber);
       }
 
@@ -499,7 +575,7 @@ const UTMBuilder = () => {
   const showCBACode = formData.program === 'Academy' && formData.channel === 'Influencer Marketing';
   const showDomainField = formData.channel !== 'Digital Marketing';
   
-  const showWhatsAppBotFields = formData.landingPage === 'WhatsApp Bot';
+  const showWhatsAppBotFields = formData.channel === 'College Dosth' && formData.landingPage === 'WhatsApp Bot';
   const availablePlacements = platformPlacements[formData.platform] || [];
   const availableLandingPages = landingPages[formData.program]?.[formData.channel] || [];
 
